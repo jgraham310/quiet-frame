@@ -1,5 +1,10 @@
 # Build and install Quiet Home
 
+**Frame fork:** read [The Frame guide](10-frame.md). The installation and
+routing recipes below still encode the U8000F's private containers, ownership,
+UID, registry and APIs. They are not a validated Frame installer. Configuration
+alone does not make these recipes compatible with another model.
+
 Quiet Home is a native NUI/.NET application, with Home/startup and remote-key
 routing adjusted to make it act as the launcher. It does not replace the
 kernel or the whole Tizen shell. Samsung's settings, app framework and media
@@ -37,9 +42,11 @@ assembles `.local/package/`. Public source cards are neutral text placeholders;
 
 ## Adapt inputs and apps
 
-The original UI uses HDMI 2 as the wide PlayStation 5 card, HDMI 3 as the
-Switch card, and HDMI 1 as the third card. Source IDs 14, 15 and 13 were observed
-on the tested TV. They are example wiring, not auto-discovery.
+The adapted UI supports one to four input cards. Copy `launcher/assets/tv.json`
+to ignored `launcher/assets/tv.local.json` and enter labels and source IDs
+observed on the target TV. Remove unused input entries. Leave an unknown
+`SourceId` as `null`: the card displays a setup message rather than switching
+an assumed input. Back also refuses to switch to an unconfigured source.
 
 Upload and run Probe to inspect sources and the current main-operation handler:
 
@@ -48,10 +55,21 @@ tv push .local/build/Probe/Probe.dll Probe.dll
 tv exec --command '/usr/bin/dotnet /home/owner/share/tmp/sdk_tools/quiet-tizen/Probe.dll'
 ```
 
-Edit labels, source actions, `RefreshSource`, `SourceIndex` and the default
-`lastSource` in `launcher/src/Home.cs` to match the actual devices. The library
-is read from `apps.json`; verify all app IDs against the TV. See
-[app configuration](06-artwork.md). Rebuild after source changes.
+Source integers 13/14/15 were observed only on the original TV. Do not copy
+them to a Frame without verifying. No C# edits are needed for input mapping.
+`ArtModeAppId` and `NativeHomeAppId` are optional, verified native app IDs;
+leave them `null` until discovered. Without an Art Mode app ID the tile
+displays remote-control guidance, rather than synthesizing a power command.
+`DockAppIds` selects up to three entries from the app library. Verify the
+library's example IDs against the target; see [app configuration](06-artwork.md).
+`EnablePrivateSettings` defaults to `false`. Enable it only after testing the
+target's private settings API. Frame mode never reads/sets the generic sleep
+timer; Samsung's Art Mode sleep/motion/light settings remain native.
+
+The build packages `tv.local.json` as `tv.json`, excluding the local filename.
+Rebuild after configuration changes. To reproduce U8000F controls explicitly,
+set `Family` to `u8000f`, provide verified input IDs/dock IDs, and enable private
+settings after validation.
 
 ## Install without changing Home yet
 

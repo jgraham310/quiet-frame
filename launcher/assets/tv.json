@@ -1,0 +1,13 @@
+{
+  "Family": "frame",
+  "Inputs": [
+    {"Name": "HDMI 1", "SourceId": null},
+    {"Name": "HDMI 2", "SourceId": null},
+    {"Name": "HDMI 3", "SourceId": null},
+    {"Name": "HDMI 4", "SourceId": null}
+  ],
+  "ArtModeAppId": null,
+  "NativeHomeAppId": null,
+  "DockAppIds": [],
+  "EnablePrivateSettings": false
+}

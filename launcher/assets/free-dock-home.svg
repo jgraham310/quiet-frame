@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="253" height="126" viewBox="0 0 253 126">
+ <rect width="253" height="126" rx="22" fill="#456780"/>
+ <path d="M99 45l28-24 28 24M105 42v27h44V42M120 69V51h14v18" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+ <text x="126.5" y="101" text-anchor="middle" font-family="sans-serif" font-size="21" fill="#fff">Samsung Home</text>
+</svg>

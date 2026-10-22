@@ -21,3 +21,5 @@ jobs:
         run: python3 tools/build.py payloads
       - name: Test native catalog logic without Samsung references
         run: dotnet run --project tests/CatalogTests.csproj -- launcher/assets/apps.json
+      - name: Test Frame configuration without Samsung references
+        run: dotnet run --project tests/LauncherConfigTests.csproj -- launcher/assets/tv.json

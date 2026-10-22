@@ -9,6 +9,26 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def package_launcher(build_dir, source_assets, destination):
+    """Package assets with local overrides, without leaking the local filenames."""
+    destination.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(build_dir / "Home/BixbyPromotion.dll", destination / "BixbyPromotion.dll")
+    shutil.copyfile(build_dir / "QuickLaunch/QuickLaunch.dll", destination / "QuickLaunch.dll")
+    shutil.copyfile(build_dir / "Probe/Probe.dll", destination / "Probe.dll")
+    assets = destination / "quiet-home"
+    if assets.exists():
+        shutil.rmtree(assets)
+    shutil.copytree(source_assets, assets)
+    local_catalog = source_assets / "apps.local.json"
+    if local_catalog.exists():
+        shutil.copyfile(local_catalog, assets / "apps.json")
+    (assets / "apps.local.json").unlink(missing_ok=True)
+    local_tv = source_assets / "tv.local.json"
+    if local_tv.exists():
+        shutil.copyfile(local_tv, assets / "tv.json")
+    (assets / "tv.local.json").unlink(missing_ok=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("target", choices=["payloads", "launcher", "all"])
@@ -36,19 +56,7 @@ def main():
             f"-p:PathMap={ROOT}=/_/quiet-tizen", *extra,
         ], check=True, env={**os.environ, "DOTNET_CLI_TELEMETRY_OPTOUT": "1"})
     if args.target in ("launcher", "all"):
-        destination = ROOT / ".local/package"
-        destination.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(ROOT / ".local/build/Home/BixbyPromotion.dll", destination / "BixbyPromotion.dll")
-        shutil.copyfile(ROOT / ".local/build/QuickLaunch/QuickLaunch.dll", destination / "QuickLaunch.dll")
-        shutil.copyfile(ROOT / ".local/build/Probe/Probe.dll", destination / "Probe.dll")
-        assets = destination / "quiet-home"
-        if assets.exists():
-            shutil.rmtree(assets)
-        shutil.copytree(ROOT / "launcher/assets", assets)
-        local_catalog = ROOT / "launcher/assets/apps.local.json"
-        if local_catalog.exists():
-            shutil.copyfile(local_catalog, assets / "apps.json")
-        (assets / "apps.local.json").unlink(missing_ok=True)
+        package_launcher(ROOT / ".local/build", ROOT / "launcher/assets", ROOT / ".local/package")
         print("Deployable files: .local/package/. Review the catalog and input mapping before use.")
 
 

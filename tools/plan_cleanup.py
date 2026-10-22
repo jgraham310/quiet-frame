@@ -7,6 +7,7 @@ import re
 import shlex
 import sqlite3
 import os
+from device_profiles import DEFAULT_PROFILE, load_profile, cleanup_ids
 
 ROOT = Path(__file__).resolve().parents[1]
 FIELDS = ("app_disable", "app_onboot", "app_autorestart")
@@ -84,21 +85,20 @@ def main():
     p.add_argument("--snapshot", type=Path, required=True)
     p.add_argument("--groups", nargs="+", required=True)
     p.add_argument("--output", type=Path, required=True, help="New directory below .local/")
-    p.add_argument("--profile", type=Path, default=ROOT / "profiles/un75u8000ffxza-1300.9.json")
+    p.add_argument("--profile", type=Path, default=DEFAULT_PROFILE)
     args = p.parse_args()
     out = args.output.resolve()
     if (ROOT / ".local").resolve() not in out.parents:
         p.error("Plans contain private rollback state; write them below this checkout's .local/.")
     if out.exists():
         p.error("Output directory already exists; preserve previous rollback records.")
-    profile = json.loads(args.profile.read_text())
-    ids = []
-    for group in args.groups:
-        if group not in profile["groups"]:
-            p.error(f"Unknown group: {group}")
-        ids += profile["groups"][group]["app_ids"]
-    if len(ids) != len(set(ids)):
-        p.error("Groups contain duplicate IDs.")
+    profile = load_profile(args.profile)
+    try:
+        ids = cleanup_ids(profile, args.groups)
+    except ValueError as error:
+        p.error(str(error))
+    if profile.get("registry") != DB:
+        p.error("This planner supports only the inspected package registry path; adapt it first.")
     rows = read_rows(args.snapshot, ids)
     out.mkdir(parents=True, mode=0o700)
     for action in ("apply", "restore"):

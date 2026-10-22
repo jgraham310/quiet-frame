@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Explicit-target access for the documented U8000F profile. See docs/02-access.md."""
+"""Explicit-target, profile-gated Samsung TV access. Start with docs/10-frame.md."""
 import argparse
 import asyncio
 import base64
@@ -13,13 +13,14 @@ import re
 import shlex
 import sys
 from datetime import datetime, timezone
+from device_profiles import DEFAULT_PROFILE, load_profile, check_identity as profile_identity
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "vendor"))
 from samsung_tv_root.archive_root import probe, _check_target, _capture
 from samsung_tv_root.sdb import SdbClient, find_sdb
 
-PROFILE = json.loads((ROOT / "profiles/un75u8000ffxza-1300.9.json").read_text())
+PROFILE = load_profile()
 STAGE = "/home/owner/share/tmp/sdk_tools/quiet-tizen"
 
 
@@ -48,12 +49,22 @@ def observed_model(client):
     return rows[0][-1]
 
 
-def check_identity(model, firmware):
-    if model != PROFILE["model"]:
-        raise ValueError(f"Unsupported model {model!r}; stop and investigate a separate profile.")
-    if firmware != PROFILE["firmware"]:
-        raise ValueError("Supply --firmware with the exact version read from About This TV. "
-                         "Only the documented build is accepted. Do not guess this value.")
+def check_identity(model, firmware, profile=None, *, mutation=False):
+    profile_identity(model, firmware, PROFILE if profile is None else profile, mutation=mutation)
+
+
+def inventory_command():
+    # No source switching, preference writes, unit stops or package modifications.
+    # Missing private schemas remain explicit failures, not compatibility evidence.
+    return """set -eu
+uname -srmo
+readlink -f /usr/share/dotnet.tizen/netcoreapp
+sqlite3 -readonly /opt/dbspace/.pkgmgr_parser.db '.schema package_app_info'
+sqlite3 -readonly -header -csv /opt/dbspace/.pkgmgr_parser.db 'SELECT app_id,app_disable,app_onboot,app_autorestart FROM package_app_info ORDER BY app_id;'
+sqlite3 -readonly /opt/dbspace/.app-context.db '.schema key_filter'
+vconftool get db/appfw/home_appid
+vconftool get db/appfw/startup_appid
+"""
 
 
 def pull_command(remote):
@@ -89,10 +100,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", required=True, help="The owner's TV IPv4 address; never auto-discovered")
     parser.add_argument("--firmware", help="Operator-verified version from the TV's About screen")
+    parser.add_argument("--profile", type=Path, default=DEFAULT_PROFILE,
+                        help="Exact device profile; default is the non-deployable Frame template")
     parser.add_argument("--sdb", help="Path to Samsung's separately installed SDB")
     parser.add_argument("--callback-host", help="This computer's LAN IPv4 if route detection is wrong")
     sub = parser.add_subparsers(dest="action", required=True)
+    sub.add_parser("identify", help="Read only the explicitly selected SDB device identity")
     sub.add_parser("doctor", help="Read SDB identity and archive-route capabilities; does not obtain root")
+    sub.add_parser("inventory", help="Collect read-only runtime/registry information using temporary root")
     sub.add_parser("root-check", help="Temporarily obtain root and run id; no configuration changes")
     run = sub.add_parser("exec", help="Execute one reviewed command or short script using temporary root")
     source = run.add_mutually_exclusive_group(required=True)
@@ -106,6 +121,7 @@ def main():
     push.add_argument("local", type=Path)
     push.add_argument("name", help="Simple staging filename")
     args = parser.parse_args()
+    profile = load_profile(args.profile)
     ipaddress.IPv4Address(args.host)
     if args.callback_host:
         ipaddress.IPv4Address(args.callback_host)
@@ -114,6 +130,9 @@ def main():
     client = SdbClient(find_sdb(), args.host, timeout=15)
     model = observed_model(client)
     print("SDB model:", model)
+    if args.action == "identify":
+        print("Read firmware from Settings > Support > About This TV; SDB identity is not compatibility proof.")
+        return
     if args.action == "doctor":
         assessment = _check_target(client)
         print("Archive-route runtime family:", assessment.runtime)
@@ -121,7 +140,7 @@ def main():
         print(_capture(client, "uname -srmo; readlink -f /usr/share/dotnet.tizen/netcoreapp"))
         print("Preflight only. Firmware must be read on the TV; root is not yet confirmed.")
         return
-    check_identity(model, args.firmware)
+    check_identity(model, args.firmware, profile, mutation=args.action in ("exec", "push"))
     if args.action == "push":
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,100}", args.name):
             raise ValueError("Use a simple staging filename without directory components.")
@@ -138,6 +157,8 @@ def main():
         return
     if args.action == "root-check":
         command = "id"
+    elif args.action == "inventory":
+        command = inventory_command()
     elif args.action == "pull":
         private_path(args.local)
         command = pull_command(args.remote)
@@ -171,6 +192,8 @@ def main():
     if args.action == "pull":
         save_private(args.local, decode_pull(response["stdout"]))
         print("Verified file saved inside .local/.")
+    elif args.action == "inventory":
+        print(f"Private inventory saved in {log.relative_to(ROOT)}. Review locally; do not publish raw output.")
     else:
         print(response["stdout"], end="")
     print("UID/EUID 0 verified; root staging cleaned; passwd and SDB key hashes unchanged.")

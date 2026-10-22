@@ -1,5 +1,11 @@
 # Developer Mode and temporary root
 
+For The Frame, use [the Frame inventory workflow](10-frame.md) first. The
+commands below explicitly select the original U8000F profile. They do not
+establish Frame compatibility. `identify` only reads SDB identity; `doctor`
+inspects archive-route prerequisites. Neither proves that root, installation
+or private launcher APIs work on another TV.
+
 ## Prepare the computer
 
 Use Python 3.12+, OpenSSL, Samsung's SDB and the .NET 6 SDK. Install SDB through
@@ -13,7 +19,7 @@ export SDB=/absolute/path/to/tizen-studio/tools/sdb
 export TV_IP=192.0.2.50
 # Replace the example IP above. Read this string on YOUR TV; do not guess it.
 export TV_FIRMWARE='T-KSU2EFAKUC-0090-1300.9'
-tv() { python3 tools/tv.py --host "$TV_IP" --firmware "$TV_FIRMWARE" "$@"; }
+tv() { python3 tools/tv.py --host "$TV_IP" --firmware "$TV_FIRMWARE" --profile profiles/un75u8000ffxza-1300.9.json "$@"; }
 python3 tools/build.py payloads
 ```
 

@@ -8,18 +8,43 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-from tv import check_identity, decode_pull, private_path, PROFILE
+from tv import check_identity, decode_pull, private_path, PROFILE, inventory_command
+from device_profiles import load_profile
 
 
 class AccessTests(unittest.TestCase):
     def test_target_identity_gate(self):
-        check_identity(PROFILE["model"], PROFILE["firmware"])
+        legacy = load_profile(ROOT / "profiles/un75u8000ffxza-1300.9.json")
+        check_identity(legacy["model"], legacy["firmware"], legacy, mutation=True)
         with self.assertRaises(ValueError):
-            check_identity("ANOTHER_MODEL", PROFILE["firmware"])
+            check_identity("ANOTHER_MODEL", legacy["firmware"], legacy)
         with self.assertRaises(ValueError):
-            check_identity(PROFILE["model"], "ANOTHER_FIRMWARE")
+            check_identity(legacy["model"], "ANOTHER_FIRMWARE", legacy)
         with self.assertRaises(ValueError):
-            check_identity(PROFILE["model"], None)
+            check_identity(legacy["model"], None, legacy)
+
+    def test_default_frame_template_never_permits_root_or_mutation(self):
+        self.assertEqual(PROFILE["family"], "frame")
+        for mutation in (False, True):
+            with self.assertRaisesRegex(ValueError, "inventory template"):
+                check_identity(None, None, mutation=mutation)
+
+    def test_frame_inventory_profile_does_not_authorize_deployment(self):
+        profile = {**PROFILE, "model": "SYNTHETIC_FRAME", "firmware": "SYNTHETIC_FIRMWARE"}
+        check_identity(profile["model"], profile["firmware"], profile)
+        with self.assertRaisesRegex(ValueError, "inventory only"):
+            check_identity(profile["model"], profile["firmware"], profile, mutation=True)
+        with self.assertRaises(ValueError):
+            check_identity("OTHER_FRAME", profile["firmware"], profile)
+        with self.assertRaises(ValueError):
+            check_identity(profile["model"], "OTHER_FIRMWARE", profile)
+
+    def test_inventory_reads_registry_and_never_writes_preferences(self):
+        command = inventory_command()
+        self.assertIn("sqlite3 -readonly", command)
+        self.assertNotIn("vconftool set", command)
+        self.assertNotIn("app_launcher", command)
+        self.assertNotIn("systemctl", command)
 
     def test_transfer_integrity(self):
         payload = b"synthetic contents only" * 100

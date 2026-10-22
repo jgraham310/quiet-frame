@@ -1,0 +1,118 @@
+# Adapt Quiet Frame to your TV
+
+The Frame uses Tizen too, but the original U8000F's firmware, native APIs,
+source integers and package layout are not a Frame compatibility profile.
+This fork provides a configurable launcher and guarded host tools; it does
+not yet provide a validated Frame installer or promise root access on a
+particular Frame generation.
+
+## Identify the exact target
+
+Record the model code and **complete software version** from Settings →
+Support → About This TV. Do not share the serial number, MAC address or QR code.
+Year/size alone cannot establish runtime compatibility, particularly after
+firmware upgrades. Samsung publishes [TV model groups](https://developer.samsung.com/smarttv/develop/specifications/tv-model-groups.html),
+but inspect the actual runtime and capabilities too.
+
+With Samsung's SDB separately installed and Developer Mode authorized for
+your computer, use only the owner's explicit TV address:
+
+```sh
+python3 tools/tv.py --host YOUR_TV_IPV4 identify
+python3 tools/tv.py --host YOUR_TV_IPV4 doctor
+```
+
+Replace `YOUR_TV_IPV4`; neither command scans the network. `identify` reads
+the SDB device identity only. `doctor` checks archive-route prerequisites,
+without requesting root. Firmware remains an operator observation from the
+About screen, not something this helper independently verifies. A successful
+doctor result is not launcher/cleanup compatibility proof.
+
+Copy `profiles/frame-template.json` into ignored `.local/frame.json`. Enter
+the exact SDB model and About-screen firmware; leave `allow_mutation` false
+and `groups` empty. Do not substitute the original U8000F firmware string.
+After inspecting preflight and building the access payloads, an exact private
+profile can be used for temporary-root testing and read-only collection:
+
+```sh
+python3 tools/build.py payloads
+python3 tools/tv.py --host YOUR_TV_IPV4 --profile .local/frame.json --firmware YOUR_EXACT_FIRMWARE root-check
+python3 tools/tv.py --host YOUR_TV_IPV4 --profile .local/frame.json --firmware YOUR_EXACT_FIRMWARE inventory
+```
+
+These commands still use the vendored temporary-root route; success is not
+assumed. Inventory records stay in `.local/sessions/`. The inventory may fail
+if a schema/key is absent: inspect that difference rather than treating an
+empty result as compatible. `pull` is also available for bounded private
+reads with the exact profile; generic `exec` and `push` remain blocked while
+`allow_mutation` is false.
+
+## Preserve native Frame functions
+
+Samsung documents the normal Power-button path between TV and Art Mode,
+plus motion/light behavior and SmartThings controls in its
+[Art Mode guide](https://www.samsung.com/us/support/answer/ANS10005239/).
+Check the actual TV's Power Button setting because behavior varies. Quiet
+Home does not intercept Power, issue power toggles, upload art, change sensor
+settings or implement Samsung's Art Store protocol. The optional `ArtModeAppId`
+shortcut is an application launch, not a claim that every Frame exposes a
+launchable Art Mode application. Validate the actual result; otherwise leave
+it null and use the Samsung remote/native UI.
+
+Keep Art Mode/Art Store, motion/light/power services, native Home and settings,
+SmartThings and selected apps. Discover **actual** app IDs and dependencies;
+names alone do not establish what a service does. Add discovered dependencies
+to the private profile's `protected_app_ids`. The cleanup planner rejects
+essential containers and conservative Art/ambient/sensor/power/SmartThings/
+context name matches, even under renamed groups. These checks are not a
+complete dependency map and do not audit arbitrary shell commands.
+
+The U8000F `smart-extras`, `context` and `light-shell` groups are rejected for
+Frame profiles. Do not import the other groups wholesale either. A future
+Frame cleanup profile must contain only individually validated targets and
+requires `allow_mutation: true`; leave the template with no targets. Reuse
+the existing snapshot-based, field-specific apply/restore planner only after
+validating the target's registry schema and dependencies.
+
+## Configure and validate the launcher
+
+Copy `launcher/assets/tv.json` to ignored `launcher/assets/tv.local.json`.
+
+| Setting | Required evidence |
+|---|---|
+| `Family` | `frame` for this fork; `u8000f` only for the original controls |
+| `Inputs` | One to four labels and actual source IDs; `null` leaves a card unconfigured |
+| `ArtModeAppId` | Optional native app ID whose launch actually opens Art Mode; otherwise `null` |
+| `NativeHomeAppId` | Original Samsung Home ID saved before any routing changes; otherwise `null` |
+| `DockAppIds` | Up to three verified app IDs also present in your local app catalog |
+| `EnablePrivateSettings` | Default `false`; enable only after private brightness/Game Mode APIs are validated |
+
+Obtain the matching private NUI/framework references and inspect source IDs
+using [the launcher guide](04-launcher.md). Do not assume the .NET 6 build or
+the Bixby Promotion/QuickLaunch containers exist on every Frame. The native
+build is still .NET 6; other runtime generations need separate adaptation.
+`tv.local.json` overrides the packaged `tv.json`; local files stay ignored.
+
+Before enabling mutation, establish runtime/assembly compatibility, package
+entry points, owners/labels, user IDs, source IDs, native APIs, selectors,
+consistent snapshots and specific inverse operations. The existing install/
+bridge scripts remain U8000F recipes. Do not run them just because the TV is
+a Frame or root works. Adapt them only to observed matching evidence.
+
+Install and manually test the UI before changing Home. Check full boot and
+standby/wake separately, Art Mode enter/exit, remote Power/long-press behavior,
+motion/light settings, native Home/settings, SmartThings, all configured HDMI
+ports (including picture/audio/CEC), chosen apps and the existing recovery
+path. Do not call the Frame port validated until those hardware tests pass.
+
+## Offline checks
+
+```sh
+python3 -m unittest discover -s tests -v
+dotnet run --project tests/LauncherConfigTests.csproj -- launcher/assets/tv.json
+dotnet run --project tests/CatalogTests.csproj -- launcher/assets/apps.json
+```
+
+These checks cover profile restrictions, protected cleanup targets, SQL
+rollback/drift, source mapping and configuration fallbacks without claiming
+that private Samsung APIs or actual Art Mode behavior have been tested.
