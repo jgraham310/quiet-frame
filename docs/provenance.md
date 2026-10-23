@@ -60,6 +60,12 @@ download manifest is an attribution/source record, not a license grant.
 
 ## What local validation establishes
 
+The native compilation statements below describe upstream U8000F validation,
+not a build of the changed Frame UI. The Frame fork separately tests host
+tools and shared C# logic; its native UI still needs matching private references
+and hardware validation. `global.json` selects an installed .NET 6 SDK so
+newer host SDKs do not silently change the compiler/restore environment.
+
 - Native launcher, bridge, Probe and root payload source compile with the
   matching locally held references/SDK.
 - Synthetic registry tests verify targeted apply/restore behavior, preservation

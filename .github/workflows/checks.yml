@@ -27,5 +27,5 @@ jobs:
         run: dotnet run --project tests/LauncherConfigTests.csproj -- launcher/assets/tv.json
       - name: Compile shared launcher logic against .NET Core 3.1 references
         run: |
-          dotnet build tests/CatalogTests.csproj -p:TargetFramework=netcoreapp3.1
-          dotnet build tests/LauncherConfigTests.csproj -p:TargetFramework=netcoreapp3.1
+          dotnet build tests/CatalogTests.csproj -p:TV_TARGET_FRAMEWORK=netcoreapp3.1
+          dotnet build tests/LauncherConfigTests.csproj -p:TV_TARGET_FRAMEWORK=netcoreapp3.1

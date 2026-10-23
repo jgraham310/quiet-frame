@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
  <PropertyGroup>
-  <OutputType>Exe</OutputType><TargetFramework>net6.0</TargetFramework>
+  <OutputType>Exe</OutputType><TargetFramework Condition="'$(TV_TARGET_FRAMEWORK)' == ''">net6.0</TargetFramework><TargetFramework Condition="'$(TV_TARGET_FRAMEWORK)' != ''">$(TV_TARGET_FRAMEWORK)</TargetFramework>
   <UseAppHost>false</UseAppHost><EnableDefaultCompileItems>false</EnableDefaultCompileItems>
  </PropertyGroup>
  <ItemGroup>

@@ -58,7 +58,7 @@ def main():
             args.dotnet, "build", str(project), "-c", "Release", "--nologo",
             "-o", str(output_root / output),
             f"-p:BaseIntermediateOutputPath={ROOT / '.local/obj' / args.target_framework / intermediate}/",
-            f"-p:TargetFramework={args.target_framework}",
+            f"-p:TV_TARGET_FRAMEWORK={args.target_framework}",
             "-p:Deterministic=true",
             f"-p:PathMap={ROOT}=/_/quiet-tizen", *extra,
         ], check=True, env={**os.environ, "DOTNET_CLI_TELEMETRY_OPTOUT": "1"})
