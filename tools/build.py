@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+from runtime_payloads import FRAMEWORKS, build_root, write_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -34,9 +35,14 @@ def main():
     parser.add_argument("target", choices=["payloads", "launcher", "all"])
     parser.add_argument("--dotnet", default=os.environ.get("DOTNET", "dotnet"))
     parser.add_argument("--framework", type=Path, default=ROOT / ".local/tv-framework")
+    parser.add_argument("--target-framework", choices=tuple(FRAMEWORKS.values()), default="net6.0",
+                        help="CLR target from doctor output, not from the Tizen version number")
     args = parser.parse_args()
+    output_root = build_root(ROOT, args.target_framework)
     jobs = []
     if args.target in ("payloads", "all"):
+        # A failed rebuild must not leave a manifest blessing partially replaced binaries.
+        (output_root / "payloads/build-manifest.json").unlink(missing_ok=True)
         for name in ("SamsungTvArchiveRoot", "SamsungTvRootAgent"):
             jobs.append((ROOT / f"vendor/payload-source/{name}.csproj", "payloads", name, []))
     if args.target in ("launcher", "all"):
@@ -50,14 +56,20 @@ def main():
     for project, output, intermediate, extra in jobs:
         subprocess.run([
             args.dotnet, "build", str(project), "-c", "Release", "--nologo",
-            "-o", str(ROOT / ".local/build" / output),
-            f"-p:BaseIntermediateOutputPath={ROOT / '.local/obj' / intermediate}/",
+            "-o", str(output_root / output),
+            f"-p:BaseIntermediateOutputPath={ROOT / '.local/obj' / args.target_framework / intermediate}/",
+            f"-p:TargetFramework={args.target_framework}",
             "-p:Deterministic=true",
             f"-p:PathMap={ROOT}=/_/quiet-tizen", *extra,
         ], check=True, env={**os.environ, "DOTNET_CLI_TELEMETRY_OPTOUT": "1"})
+    if args.target in ("payloads", "all"):
+        write_manifest(output_root / "payloads", args.target_framework)
     if args.target in ("launcher", "all"):
-        package_launcher(ROOT / ".local/build", ROOT / "launcher/assets", ROOT / ".local/package")
-        print("Deployable files: .local/package/. Review the catalog and input mapping before use.")
+        destination = ROOT / ".local/package"
+        if args.target_framework != "net6.0":
+            destination = ROOT / (".local/package-" + args.target_framework)
+        package_launcher(output_root, ROOT / "launcher/assets", destination)
+        print(f"Deployable files: {destination.relative_to(ROOT)}. Review the catalog and input mapping before use.")
 
 
 if __name__ == "__main__":

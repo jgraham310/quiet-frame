@@ -14,6 +14,7 @@ import shlex
 import sys
 from datetime import datetime, timezone
 from device_profiles import DEFAULT_PROFILE, load_profile, check_identity as profile_identity
+from runtime_payloads import FRAMEWORKS, verified_payloads
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "vendor"))
@@ -136,6 +137,7 @@ def main():
     if args.action == "doctor":
         assessment = _check_target(client)
         print("Archive-route runtime family:", assessment.runtime)
+        print("Required build framework:", FRAMEWORKS[assessment.runtime])
         print(assessment.capabilities)
         print(_capture(client, "uname -srmo; readlink -f /usr/share/dotnet.tizen/netcoreapp"))
         print("Preflight only. Firmware must be read on the TV; root is not yet confirmed.")
@@ -172,9 +174,12 @@ def main():
         if args.arg:
             raise ValueError("--arg requires --script.")
         command = args.command
+    assessment = _check_target(client)
+    payloads = verified_payloads(ROOT, assessment.runtime)
     result = asyncio.run(probe(
         args.host, model=model, callback_host=args.callback_host,
-        payloads=ROOT / ".local/build/payloads", commands=(command,), command_timeout=30,
+        payloads=payloads, expected_runtime=assessment.runtime,
+        commands=(command,), command_timeout=30,
     ))
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
     log = ROOT / ".local/sessions" / f"{stamp}.json"

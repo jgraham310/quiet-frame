@@ -113,6 +113,10 @@ optionally uses Pillow. Source builds use the .NET 6 SDK to match the tested
 TV; it is an older SDK and should be isolated from unrelated projects.
 Install Samsung's SDB separately.
 
+Tizen and CLR version numbers are separate. The build helper also accepts
+`--target-framework netcoreapp3.1` for an observed older CLR, with isolated
+outputs and verified payload manifests. See the [2021 Frame notes](docs/10-frame.md).
+
 ```sh
 python3 -m unittest discover -s tests -v
 python3 tools/build.py payloads

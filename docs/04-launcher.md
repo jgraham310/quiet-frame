@@ -36,6 +36,12 @@ Do not commit the resulting assemblies.
 python3 tools/build.py launcher --framework .local/tv-framework
 ```
 
+That command targets .NET 6. For an **observed** 3.1 runtime, append
+`--target-framework netcoreapp3.1` and use its isolated `.local/build/netcoreapp3.1/`
+and `.local/package-netcoreapp3.1/` outputs in subsequent commands. An OS version
+such as Tizen 6.0 does not select the CLR target. Matching older NUI references
+may expose additional source changes; no Frame native build is verified yet.
+
 This builds `BixbyPromotion.dll`, `QuickLaunch.dll` and `Probe.dll`, then
 assembles `.local/package/`. Public source cards are neutral text placeholders;
 [optional publisher artwork](06-artwork.md) can be fetched before rebuilding.

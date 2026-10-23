@@ -14,6 +14,17 @@ Year/size alone cannot establish runtime compatibility, particularly after
 firmware upgrades. Samsung publishes [TV model groups](https://developer.samsung.com/smarttv/develop/specifications/tv-model-groups.html),
 but inspect the actual runtime and capabilities too.
 
+### 2021 LS03A family
+
+Samsung lists LS03A in its 2021 `21TV_PREMIUM1` group with a Tizen 6.0
+platform baseline. That is a different generation from the upstream Tizen 9
+case study. A firmware version is not proof of its current CLR version or
+of archive-route access. **Tizen 6.0 does not mean .NET 6.0.** Keep the retail
+model code separately if SDB reports an internal platform/model identifier;
+the private profile's `model` gate must match the actual SDB output exactly.
+Preserve the full About-screen firmware string, including suffixes, in your
+private notes/profile; quote it when passing `--firmware` to the shell.
+
 With Samsung's SDB separately installed and Developer Mode authorized for
 your computer, use only the owner's explicit TV address:
 
@@ -35,10 +46,18 @@ After inspecting preflight and building the access payloads, an exact private
 profile can be used for temporary-root testing and read-only collection:
 
 ```sh
-python3 tools/build.py payloads
-python3 tools/tv.py --host YOUR_TV_IPV4 --profile .local/frame.json --firmware YOUR_EXACT_FIRMWARE root-check
-python3 tools/tv.py --host YOUR_TV_IPV4 --profile .local/frame.json --firmware YOUR_EXACT_FIRMWARE inventory
+# Choose the framework printed by doctor. For example, ONLY if it reports 3.1:
+python3 tools/build.py payloads --target-framework netcoreapp3.1
+python3 tools/tv.py --host YOUR_TV_IPV4 --profile .local/frame.json --firmware 'YOUR_EXACT_FIRMWARE' root-check
+python3 tools/tv.py --host YOUR_TV_IPV4 --profile .local/frame.json --firmware 'YOUR_EXACT_FIRMWARE' inventory
 ```
+
+For an observed runtime family of `6.0`, build with `--target-framework net6.0`.
+The helper chooses the matching output directory and verifies its build manifest,
+runtime configuration and file digests before requesting root. It refuses a
+stale/unrecorded or mismatched build. Merely generating a 3.1 runtimeconfig for
+a .NET 6 DLL does not retarget that DLL. The separate 3.1 build prevents that
+mistake, but successful compilation alone does not prove this TV can execute it.
 
 These commands still use the vendored temporary-root route; success is not
 assumed. Inventory records stay in `.local/sessions/`. The inventory may fail
@@ -89,8 +108,12 @@ Copy `launcher/assets/tv.json` to ignored `launcher/assets/tv.local.json`.
 
 Obtain the matching private NUI/framework references and inspect source IDs
 using [the launcher guide](04-launcher.md). Do not assume the .NET 6 build or
-the Bixby Promotion/QuickLaunch containers exist on every Frame. The native
-build is still .NET 6; other runtime generations need separate adaptation.
+the Bixby Promotion/QuickLaunch containers exist on every Frame. The build
+helper accepts `--target-framework net6.0` (default) or `netcoreapp3.1`, selected
+only from observed runtime evidence. For the latter, build output lives in
+`.local/build/netcoreapp3.1/` and launcher packages in `.local/package-netcoreapp3.1/`.
+Use matching private reference assemblies; older NUI APIs may still need source
+adaptation and the complete launcher has not been compiled for a Frame yet.
 `tv.local.json` overrides the packaged `tv.json`; local files stay ignored.
 
 Before enabling mutation, establish runtime/assembly compatibility, package
@@ -116,3 +139,5 @@ dotnet run --project tests/CatalogTests.csproj -- launcher/assets/apps.json
 These checks cover profile restrictions, protected cleanup targets, SQL
 rollback/drift, source mapping and configuration fallbacks without claiming
 that private Samsung APIs or actual Art Mode behavior have been tested.
+CI also compiles access payloads and shared launcher logic against .NET Core
+3.1 references. It does not run the native UI or establish execution on a 3.1 TV.

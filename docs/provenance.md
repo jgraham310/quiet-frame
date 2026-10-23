@@ -21,13 +21,21 @@ Only the archive-route support modules and two .NET payload projects are
 vendored. The QN90B/QN90F kernel exploits, continuous host controller,
 firmware-key tooling and unrelated payloads are not bundled.
 `resources.py` retains upstream profile names, but this toolkit explicitly
-builds and selects only the two common .NET 6 payloads.
+builds only the two common access payloads, now separately targetable to .NET 6
+or .NET Core 3.1. No additional exploit route was added for the Frame fork.
 
-The one local change to the copied access code is in `archive_root.py`:
+The original local change to the copied access code is in `archive_root.py`:
 if Samsung's host returns the exact `Unknown option --list-runtimes` error,
 resolve `/usr/share/dotnet.tizen/netcoreapp`, require `libcoreclr.so` and
 `System.Private.CoreLib.dll`, then derive the runtime version from that path.
 Other preflight errors still fail. This fallback was used on the actual TV.
+
+The Frame fork additionally accepts an optional expected runtime family in
+`probe`. It refuses a change between the wrapper's payload selection and
+probe's own preflight before opening a root callback server or staging files.
+The wrapper checks generated runtime configurations and build-manifest digests
+before selecting a payload directory. These additions have offline tests;
+they are not evidence that temporary root works on any Frame firmware.
 
 The new `tools/tv.py` wrapper adds explicit model/declared-firmware gating,
 private local storage, bounded checksum-verified file transfer and reviewed

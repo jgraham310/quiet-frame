@@ -48,6 +48,11 @@ tv root-check
 
 `doctor` checks the SDB foothold, runtime, file capabilities and tar support.
 It does not obtain root or establish compatibility for every private API.
+It also prints the matching build framework. The example above builds .NET 6
+payloads for the original device. If another device's preflight reports 3.1,
+build separately with `python3 tools/build.py payloads --target-framework netcoreapp3.1`.
+The wrapper requires a matching build manifest and checksums before root access;
+old unrecorded payload folders must be rebuilt.
 `root-check` builds on that route, executes `id`, and requires an authenticated
 UID/EUID 0 callback plus successful staging/system-file cleanup.
 
