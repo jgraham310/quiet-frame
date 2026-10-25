@@ -16,7 +16,7 @@ jobs:
           - sdk: "10.0.302"
             sdk_major: "10"
     env:
-      DOTNET_INSTALL_DIR: ${{ runner.temp }}/quiet-frame-dotnet
+      DOTNET_INSTALL_DIR: ${{ github.workspace }}/.local/ci-dotnet
       DOTNET_MULTILEVEL_LOOKUP: "0"
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
       # Offline test executables target net6.0; allow them to run on the
