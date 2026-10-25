@@ -139,6 +139,12 @@ vconftool() {
             self.assertIn('runtimeOptions', result.stdout)
             self.assertIn('Directory absent', result.stdout)
             self.assertEqual(expected, {str(p): p.read_bytes() for p in package.rglob("*") if p.is_file()})
+            detail = containers_command(True).replace("/opt/usr/apps", str(base / "writable"))
+            result = subprocess.run(["sh"], input=prefix + detail, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(hashlib.sha256(runtime.read_bytes()).hexdigest(), result.stdout)
+            self.assertIn('Entry assembly and runtime configuration', result.stdout)
+            self.assertEqual(expected, {str(p): p.read_bytes() for p in package.rglob("*") if p.is_file()})
 
     def test_transfer_integrity(self):
         payload = b"synthetic contents only" * 100

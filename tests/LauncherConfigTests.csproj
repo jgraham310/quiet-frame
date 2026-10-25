@@ -5,6 +5,7 @@
  </PropertyGroup>
  <ItemGroup>
   <Compile Include="../launcher/src/LauncherConfig.cs" />
+    <Compile Include="../launcher/src/LaunchPolicy.cs" />
   <Compile Include="LauncherConfigTests.cs" />
  </ItemGroup>
 </Project>

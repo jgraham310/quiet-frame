@@ -108,6 +108,12 @@ does not launch apps, change permissions, register packages or alter files:
 python3 tools/tv.py --host YOUR_TV_IPV4 --profile .local/frame.json --firmware 'YOUR_EXACT_FIRMWARE' containers
 ```
 
+If AdPlayer is being evaluated as a possible trial container, append
+`--adplayer-details` to inspect its actual entry/cache files, hashes, per-user
+application records, explicit dependency rows and launch-tool help. This is
+still read-only. An installed manifest and file ownership alone do not prove
+that a package can safely host the launcher or establish its launch user.
+
 ## Preserve native Frame functions
 
 Samsung documents the normal Power-button path between TV and Art Mode,
@@ -165,6 +171,24 @@ The toolbar keeps Samsung Home accessible once its shortcut has been verified;
 Art Mode remains available from Settings and the native remote. No source
 probe is required for this setup. Add verified input entries later to restore
 the Inputs page and its original Back-to-input behavior.
+
+An experimental `--home-assembly AdPlayer` build variant emits `AdPlayer.dll`,
+its generated runtime configuration/dependency file and resources into a
+separate `.local/package-netcoreapp3.1-AdPlayer/` folder for a 3.1 target. It
+does not include the original QuickLaunch bridge. This option builds only;
+it is not an AdPlayer installer and does not approve changing that package.
+The assembly's compiled identity requires an explicit `quiet_page` value of
+`home`, `apps` or `settings` before initializing/showing Quiet Home. Unmarked
+requests hide the window and exit instead of being treated as Home requests.
+The BixbyPromotion variant retains its original launch behavior.
+
+Before a trial, verify actual entry/AOT files and launch user, record original
+hashes/owners/labels, create consistent registry snapshots and preserve original
+assembly/runtime/cache files both on the TV and on the computer. Prepare the
+specific inverse operations before replacing anything. Keep Home/startup and
+all native settings/Art Mode packages intact during the manual trial. Vendor
+runtime configurations targeting .NET Core 2.0 do not change the observed 3.1
+runtime or justify retargeting the new build to 2.0.
 
 The launcher uses the application's existing window and explicitly aliases
 filesystem paths to avoid NUI's own `Path` type. A compatibility helper inspects

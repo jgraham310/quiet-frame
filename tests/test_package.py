@@ -14,6 +14,28 @@ from build import package_launcher
 
 
 class PackageTests(unittest.TestCase):
+    def test_adplayer_package_uses_its_own_entry_and_omits_legacy_bridge(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            builds, assets, output = root / "build", root / "assets", root / "package"
+            assets.mkdir()
+            (assets / "tv.json").write_text('{"Family":"frame","Inputs":[]}')
+            (assets / "apps.json").write_text('[]')
+            for name in ("AdPlayer.dll", "AdPlayer.runtimeconfig.json", "AdPlayer.deps.json"):
+                path = builds / "Home-AdPlayer" / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(name)
+            probe = builds / "Probe/Probe.dll"
+            probe.parent.mkdir()
+            probe.write_bytes(b"synthetic probe")
+            package_launcher(builds, assets, output, "AdPlayer")
+            self.assertEqual((output / "AdPlayer.dll").read_text(), "AdPlayer.dll")
+            self.assertTrue((output / "AdPlayer.runtimeconfig.json").exists())
+            self.assertTrue((output / "AdPlayer.deps.json").exists())
+            self.assertFalse((output / "BixbyPromotion.dll").exists())
+            self.assertFalse((output / "QuickLaunch.dll").exists())
+            self.assertEqual(json.loads((output / "quiet-home/tv.json").read_text())["Inputs"], [])
+
     def test_local_configuration_is_packaged_and_clean_rebuild_restores_default(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

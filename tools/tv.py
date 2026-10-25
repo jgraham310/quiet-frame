@@ -126,9 +126,38 @@ base64 "$t"
 """
 
 
-def containers_command():
+def containers_command(adplayer_details=False):
     # Inspect vendor package metadata only. Names here are comparison samples,
     # not approved replacement containers or cleanup targets.
+    if adplayer_details:
+        return """set -eu
+A=/opt/usr/apps/com.samsung.tv.adplayer
+printf '\\n=== AdPlayer registry record ===\\n'
+sqlite3 -readonly -header -csv /opt/dbspace/.pkgmgr_parser.db "SELECT app_id,app_type,app_exec,app_root_path,package,app_disable,app_onboot,app_autorestart,app_preload FROM package_app_info WHERE app_id='com.samsung.tv.adplayer';"
+printf '\\n=== Per-user application schema and records ===\\n'
+sqlite3 -readonly /opt/dbspace/.pkgmgr_parser.db '.schema package_app_info_for_uid'
+sqlite3 -readonly -header -csv /opt/dbspace/.pkgmgr_parser.db 'SELECT * FROM package_app_info_for_uid;'
+printf '\\n=== AdPlayer files and cached native images ===\\n'
+test -d "$A/bin"
+ls -laZ "$A/bin"
+find "$A/bin" -maxdepth 3 -type f -exec stat -c 'owner=%u group=%g mode=%a bytes=%s path=%n' {} \\;
+printf '\\n=== Entry assembly and runtime configuration ===\\n'
+for file in "$A/bin/AdPlayer.dll" "$A/bin/AdPlayer.runtimeconfig.json"; do
+    if [ -f "$file" ]; then
+        readlink -f "$file"
+        ls -ldZ "$file"
+        sha256sum "$file"
+    else
+        printf 'File absent: %s\\n' "$file"
+    fi
+done
+printf '\\n=== Package dependency schema and explicit references ===\\n'
+sqlite3 -readonly /opt/dbspace/.pkgmgr_parser.db '.schema package_dependency_info'
+dependencies=$(sqlite3 -readonly /opt/dbspace/.pkgmgr_parser.db '.dump package_dependency_info')
+if printf '%s\\n' "$dependencies" | grep -F 'com.samsung.tv.adplayer'; then :; else printf 'No explicit AdPlayer dependency row found (not a complete dependency audit).\\n'; fi
+printf '\\n=== Launch utility help ===\\n'
+if help=$(app_launcher -h 2>&1); then printf '%s\\n' "$help"; else printf '%s\\n' "$help"; fi
+"""
     return """set -eu
 printf '\\n=== Package registry tables ===\\n'
 sqlite3 -readonly /opt/dbspace/.pkgmgr_parser.db "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'package%' ORDER BY name;"
@@ -184,7 +213,9 @@ def main():
     sub.add_parser("doctor", help="Read SDB identity and archive-route capabilities; does not obtain root")
     sub.add_parser("inventory", help="Collect read-only runtime/registry information using temporary root")
     sub.add_parser("platform", help="Read application entry points, Home routing and framework paths")
-    sub.add_parser("containers", help="Read package schemas, owners/labels, manifests and runtime configurations")
+    containers = sub.add_parser("containers", help="Read package schemas, owners/labels, manifests and runtime configurations")
+    containers.add_argument("--adplayer-details", action="store_true",
+                            help="Inspect entry/cache files, per-user records and launch utility help; no changes")
     sub.add_parser("sources", help="Run fixed read-only Probe queries for source IDs and native Home handler")
     sub.add_parser("root-check", help="Temporarily obtain root and run id; no configuration changes")
     run = sub.add_parser("exec", help="Execute one reviewed command or short script using temporary root")
@@ -241,7 +272,7 @@ def main():
     elif args.action == "platform":
         command = platform_command()
     elif args.action == "containers":
-        command = containers_command()
+        command = containers_command(args.adplayer_details)
     elif args.action == "sources":
         command = None
     elif args.action == "pull":

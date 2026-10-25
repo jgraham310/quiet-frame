@@ -8,6 +8,11 @@ static class LauncherConfigTests
  public static int Main(string[] args)
  {
   var config=LauncherConfig.Load(args[0]);
+  foreach(var request in new[]{null,"", "default", "advertising", "HOME"})
+   Require(!LaunchPolicy.Allows("AdPlayer",request),"Unmarked advertising requests must not open Home");
+  foreach(var request in new[]{"home","apps","settings"})
+   Require(LaunchPolicy.Allows("AdPlayer",request),"Explicit Quiet Home request rejected");
+  Require(LaunchPolicy.Allows("BixbyPromotion",null),"Original launch policy is retained explicitly");
   Require(config.IsFrame&&!config.EnablePrivateSettings,"Frame defaults preserve native settings");
   Require(config.ArtModeAppId==null&&config.NativeHomeAppId==null,"No guessed native app IDs");
   Require(config.Inputs.Count==0&&!config.HasInputs&&config.HomePage==1,"Streaming-only defaults open Apps");

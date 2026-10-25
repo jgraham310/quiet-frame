@@ -25,6 +25,8 @@ public sealed class QuietHome : NUIApplication
  string libraryError="";
  LauncherConfig config=new LauncherConfig();
  string configError="";
+ bool uiInitialized;
+ static readonly string EntryAssembly=typeof(QuietHome).Assembly.GetName().Name;
  TextLabel clock, notice, detail;
  TextLabel[] tabs;
  TextLabel toolbarHint;
@@ -68,6 +70,13 @@ public sealed class QuietHome : NUIApplication
  {
   base.OnCreate();
   try{config=LauncherConfig.Load(Root+"tv.json");}catch(Exception ex){configError="Check tv.json: "+ex.Message;}
+  if(LaunchPolicy.RequiresMarker(EntryAssembly)){Window.Hide();return;}
+  InitializeUi();
+ }
+ void InitializeUi()
+ {
+  if(uiInitialized)return;
+  uiInitialized=true;
   try{fontLoaded=FontClient.Instance.AddCustomFontDirectory(Root+"fonts");}catch{fontLoaded=false;}
   try{library=AppLibrary.Load(Root+"apps.json");}catch(Exception ex){libraryError=ex.Message;}
   Window.BackgroundColor=new Color(0.96f,0.96f,0.97f,1);
@@ -77,8 +86,8 @@ public sealed class QuietHome : NUIApplication
   clockTimer=new Tizen.NUI.Timer(30000);
   clockTimer.Tick+=(s,e)=>{if(clock!=null)clock.Text=DateTime.Now.ToString("h:mm tt");return true;};clockTimer.Start();WriteState("created");
  }
- protected override void OnResume(){base.OnResume();clockTimer?.Start();RefreshSource();if(tabs!=null&&page==2){RefreshSettings();UpdateFocus(false);}WriteState("resumed");}
- protected override void OnAppControlReceived(AppControlReceivedEventArgs e){base.OnAppControlReceived(e);string requested; if(e.ReceivedAppControl.ExtraData.TryGet("quiet_page",out requested)&&requested=="settings")OpenSettings("settings_request");else if(requested=="apps"){page=1;area=1;selected=0;BuildPage();}else Home("home_request");}
+ protected override void OnResume(){base.OnResume();if(LaunchPolicy.RequiresMarker(EntryAssembly)&&!uiInitialized){Window.Hide();return;}clockTimer?.Start();RefreshSource();if(tabs!=null&&page==2){RefreshSettings();UpdateFocus(false);}WriteState("resumed");}
+ protected override void OnAppControlReceived(AppControlReceivedEventArgs e){base.OnAppControlReceived(e);string requested;e.ReceivedAppControl.ExtraData.TryGet("quiet_page",out requested);if(!LaunchPolicy.Allows(EntryAssembly,requested)){Window.Hide();Exit();return;}InitializeUi();Window.Show();if(requested=="settings")OpenSettings("settings_request");else if(requested=="apps"){page=1;area=1;selected=0;BuildPage();}else Home("home_request");}
  protected override void OnPause(){base.OnPause();editing="";clockTimer?.Stop();WriteState("paused");}
  void Home(string activity){clockTimer?.Start();RefreshSource();if(tabs!=null){int home=config.HomePage,index=home==0?SourceIndex():0;bool unchanged=page==home&&area==1&&editing==""&&selected==index&&(home!=1||libraryPage==0);page=home;area=1;editing="";selected=index;if(home==1)libraryPage=0;if(!unchanged)BuildPage();WriteState(activity);}}
  void OpenSettings(string activity){clockTimer?.Start();page=2;area=1;selected=0;editing="";BuildPage();WriteState(activity);}

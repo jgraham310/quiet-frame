@@ -116,6 +116,14 @@ tests exercise both zero-input and explicitly mapped-input modes. The fixed
 samples without approving replacement of those packages. A temporary-filesystem
 test verifies that its inspection leaves the sampled files unchanged.
 
+An experimental AdPlayer assembly variant now uses separate build/package
+directories, carries its generated runtime/dependency files and omits the
+U8000F QuickLaunch bridge. The compiled assembly identity gates initialization
+on an explicit Quiet Home app-control marker; shared tests exercise accepted
+and rejected requests. Detailed read-only inspection collects entry/cache
+hashes and user records before any backup/install plan. These changes do not
+establish AdPlayer as a validated Frame container or constitute installation.
+
 - Native launcher, bridge, Probe and root payload source compile with the
   matching locally held references/SDK.
 - Synthetic registry tests verify targeted apply/restore behavior, preservation
