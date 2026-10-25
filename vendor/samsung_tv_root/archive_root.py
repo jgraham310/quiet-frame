@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import io
 import ipaddress
@@ -14,6 +15,7 @@ import tarfile
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import Callable
 
 from .resources import payload_directory
 from .root_agent import RootAgentServer, generate_secret, write_secret
@@ -260,6 +262,8 @@ async def probe(
     payloads: Path | None = None,
     expected_runtime: str | None = None,
     diagnostic_probe: Path | None = None,
+    command_factory: Callable[[PurePosixPath], tuple[str, ...]] | None = None,
+    collect_files: tuple[str, ...] = (),
 ) -> dict[str, object]:
     ipaddress.IPv4Address(tv_host)
     callback = callback_host or route_callback_host(tv_host)
@@ -270,6 +274,10 @@ async def probe(
     assessment = await asyncio.to_thread(_check_target, client)
     if expected_runtime is not None and assessment.runtime != expected_runtime:
         raise ArchiveRootError("TV runtime changed since payload selection; stop and repeat preflight.")
+    if command_factory is not None and (commands or diagnostic_probe is not None):
+        raise ArchiveRootError("Session command factory cannot be combined with other command modes.")
+    if any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,100}", name) for name in collect_files):
+        raise ArchiveRootError("Collect only simple filenames inside the owned session directory.")
     if diagnostic_probe is not None:
         if commands:
             raise ArchiveRootError("Diagnostic probe accepts no custom commands or arguments.")
@@ -284,6 +292,8 @@ async def probe(
         if not (payloads / name).is_file():
             raise ArchiveRootError(f"missing payload {payloads / name}")
     package = "archive-root-" + secrets.token_hex(8)
+    if command_factory is not None:
+        commands = command_factory(STAGING_ROOT / package)
     if diagnostic_probe is not None:
         # No arguments: the existing Probe's mutating set-home branch is never
         # selected. Stage and remove its files with the owned root session.
@@ -365,6 +375,17 @@ async def probe(
                                 "stderr": result.stderr,
                             }
                         )
+                if collect_files and commands and all(
+                    item["exit_code"] == 0 and not item["timed_out"]
+                    for item in evidence["commands"]
+                ):
+                    evidence["collected_files"] = {}
+                    for name in collect_files:
+                        artifact = await connection.read_file(STAGING_ROOT / package / name)
+                        evidence["collected_files"][name] = {
+                            "sha256": artifact.sha256,
+                            "base64": base64.b64encode(artifact.data).decode("ascii"),
+                        }
             finally:
                 await connection.shutdown()
             if launch_task is not None:

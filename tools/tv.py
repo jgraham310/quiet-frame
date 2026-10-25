@@ -15,6 +15,8 @@ import sys
 from datetime import datetime, timezone
 from device_profiles import DEFAULT_PROFILE, load_profile, check_identity as profile_identity
 from runtime_payloads import FRAMEWORKS, verified_payloads, verified_probe
+from adplayer_backup import (ARCHIVE as BACKUP_ARCHIVE, backup_directory,
+                             backup_command, observed_hashes)
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "vendor"))
@@ -216,6 +218,9 @@ def main():
     containers = sub.add_parser("containers", help="Read package schemas, owners/labels, manifests and runtime configurations")
     containers.add_argument("--adplayer-details", action="store_true",
                             help="Inspect entry/cache files, per-user records and launch utility help; no changes")
+    backup = sub.add_parser("backup-adplayer", help="Create private recovery copies and snapshots; does not install")
+    backup.add_argument("--name", default="adplayer-01", help="Unique backup name; existing originals are never overwritten")
+    backup.add_argument("--fetch-existing", action="store_true", help="Retrieve an already completed TV backup after a transfer failure")
     sub.add_parser("sources", help="Run fixed read-only Probe queries for source IDs and native Home handler")
     sub.add_parser("root-check", help="Temporarily obtain root and run id; no configuration changes")
     run = sub.add_parser("exec", help="Execute one reviewed command or short script using temporary root")
@@ -251,6 +256,18 @@ def main():
         print("Preflight only. Firmware must be read on the TV; root is not yet confirmed.")
         return
     check_identity(model, args.firmware, profile, mutation=args.action in ("exec", "push"))
+    command_factory = None
+    collect_files = ()
+    if args.action == "backup-adplayer":
+        backup_directory(args.name)
+        backup_local = private_path(ROOT / ".local/backups" / args.name / "backup.tar.gz")
+        if backup_local.exists() and not args.fetch_existing:
+            raise ValueError("Local backup already exists; originals will not be overwritten.")
+        expected = observed_hashes(ROOT, model)
+        sdk_uid = _capture(client, "id -u")
+        command_factory = lambda staging: (backup_command(
+            args.name, staging, expected, sdk_uid, fetch_existing=args.fetch_existing),)
+        collect_files = (BACKUP_ARCHIVE,)
     if args.action == "push":
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,100}", args.name):
             raise ValueError("Use a simple staging filename without directory components.")
@@ -273,7 +290,7 @@ def main():
         command = platform_command()
     elif args.action == "containers":
         command = containers_command(args.adplayer_details)
-    elif args.action == "sources":
+    elif args.action in ("sources", "backup-adplayer"):
         command = None
     elif args.action == "pull":
         private_path(args.local)
@@ -294,8 +311,9 @@ def main():
     result = asyncio.run(probe(
         args.host, model=model, callback_host=args.callback_host,
         payloads=payloads, expected_runtime=assessment.runtime,
-        commands=() if diagnostic_probe is not None else (command,), command_timeout=30,
+        commands=() if diagnostic_probe is not None or command_factory is not None else (command,), command_timeout=30,
         diagnostic_probe=diagnostic_probe,
+        command_factory=command_factory, collect_files=collect_files,
     ))
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
     log = ROOT / ".local/sessions" / f"{stamp}.json"
@@ -307,17 +325,33 @@ def main():
     response = result["commands"][0]
     if response["stderr"]:
         print(response["stderr"], file=sys.stderr, end="")
-    if args.action in ("sources", "containers"):
+    if args.action in ("sources", "containers", "backup-adplayer"):
         print(response["stdout"], end="")
     if response["exit_code"] or response["timed_out"]:
         raise RuntimeError(f"Command failed ({response['exit_code']}, timeout={response['timed_out']}). "
                            f"Private log: {log.relative_to(ROOT)}")
-    if args.action == "pull":
+    if args.action == "backup-adplayer":
+        artifact = result.get("collected_files", {}).get(BACKUP_ARCHIVE)
+        if artifact is None:
+            raise ValueError("No verified backup archive was returned; keep the TV backup for inspection.")
+        data = base64.b64decode(artifact["base64"], validate=True)
+        if len(data) > 4194304 or hashlib.sha256(data).hexdigest() != artifact["sha256"]:
+            raise ValueError("Backup archive digest/size mismatch; no local copy saved.")
+        if backup_local.exists():
+            if hashlib.sha256(backup_local.read_bytes()).hexdigest() != artifact["sha256"]:
+                raise ValueError("Existing local backup differs; it was not overwritten.")
+        else:
+            with backup_local.open("xb") as output:
+                output.write(data)
+            backup_local.chmod(0o600)
+        print(f"Verified recovery archive: {backup_local.relative_to(ROOT)}")
+        print(f"On-TV recovery directory: {backup_directory(args.name)}")
+    elif args.action == "pull":
         save_private(args.local, decode_pull(response["stdout"]))
         print("Verified file saved inside .local/.")
     elif args.action == "inventory":
         print(f"Private inventory saved in {log.relative_to(ROOT)}. Review locally; do not publish raw output.")
-    elif args.action not in ("sources", "containers"):
+    elif args.action not in ("sources", "containers", "backup-adplayer"):
         print(response["stdout"], end="")
     print("UID/EUID 0 verified; root staging cleaned; passwd and SDB key hashes unchanged.")
 

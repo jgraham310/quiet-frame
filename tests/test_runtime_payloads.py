@@ -1,4 +1,5 @@
 import hashlib
+import base64
 import json
 from pathlib import Path
 import sys
@@ -131,6 +132,53 @@ class RuntimePayloadTests(unittest.TestCase):
             with self.assertRaisesRegex(ArchiveRootError, "runtime changed"):
                 asyncio.run(probe("192.0.2.50", callback_host="192.0.2.51", expected_runtime="6.0"))
             stage.assert_not_called()
+            server.assert_not_called()
+
+    def test_backup_artifact_collection_stays_in_owned_session_and_cleans_up(self):
+        payloads = self.build_fixture("netcoreapp3.1")
+        client = Mock()
+        client.capture.return_value = Mock(output="[exit:0]")
+        connection = Mock()
+        connection.ping = AsyncMock(return_value=Mock(uid=0, euid=0, gid=0, egid=0,
+            effective_capabilities="synthetic", smack_label="User"))
+        connection.execute = AsyncMock(return_value=Mock(exit_code=0, timed_out=False,
+            stdout="backup complete", stderr=""))
+        data = b"synthetic recovery archive"
+        connection.read_file = AsyncMock(return_value=Mock(data=data,
+            sha256=hashlib.sha256(data).hexdigest()))
+        connection.shutdown = AsyncMock()
+        server = Mock(listening_port=12345, secret=b"synthetic secret")
+        server.start = AsyncMock()
+        server.accept = AsyncMock(return_value=connection)
+        server.close = AsyncMock()
+        with patch("samsung_tv_root.archive_root.SdbClient", return_value=client), \
+             patch("samsung_tv_root.archive_root.find_sdb", return_value="synthetic-sdb"), \
+             patch("samsung_tv_root.archive_root._check_target", return_value=Mock(
+                 runtime="3.1", capabilities="synthetic", original_hashes="unchanged")), \
+             patch("samsung_tv_root.archive_root.RootAgentServer", return_value=server), \
+             patch("samsung_tv_root.archive_root._prepare_artifacts"), \
+             patch("samsung_tv_root.archive_root._stage"), \
+             patch("samsung_tv_root.archive_root._cleanup", return_value=True) as cleanup, \
+             patch("samsung_tv_root.archive_root._capture", return_value="unchanged"):
+            result = asyncio.run(probe("192.0.2.50", callback_host="192.0.2.51",
+                payloads=payloads, expected_runtime="3.1",
+                command_factory=lambda stage: ("prepare " + str(stage),),
+                collect_files=("backup.tar.gz",)))
+        artifact = result["collected_files"]["backup.tar.gz"]
+        self.assertEqual(base64.b64decode(artifact["base64"]), data)
+        self.assertEqual(artifact["sha256"], hashlib.sha256(data).hexdigest())
+        self.assertRegex(str(connection.read_file.call_args.args[0]),
+            r"^/home/owner/share/tmp/sdk_tools/archive-root-[0-9a-f]{16}/backup\.tar\.gz$")
+        self.assertTrue(result["staging_cleaned"] and result["system_files_unchanged"])
+        cleanup.assert_called_once()
+
+    def test_artifact_collection_rejects_paths_before_starting_session(self):
+        with patch("samsung_tv_root.archive_root.SdbClient"), \
+             patch("samsung_tv_root.archive_root.find_sdb", return_value="synthetic-sdb"), \
+             patch("samsung_tv_root.archive_root._check_target", return_value=Mock(runtime="3.1")), \
+             patch("samsung_tv_root.archive_root.RootAgentServer") as server:
+            with self.assertRaisesRegex(ArchiveRootError, "simple filenames"):
+                asyncio.run(probe("192.0.2.50", callback_host="192.0.2.51", collect_files=("../private",)))
             server.assert_not_called()
 
 

@@ -190,6 +190,34 @@ all native settings/Art Mode packages intact during the manual trial. Vendor
 runtime configurations targeting .NET Core 2.0 do not change the observed 3.1
 runtime or justify retargeting the new build to 2.0.
 
+After a successful detailed preflight, create recovery copies with a unique
+name before any trial installation:
+
+```sh
+python3 tools/tv.py --host YOUR_TV_IPV4 --profile .local/frame.json --firmware 'YOUR_EXACT_FIRMWARE' backup-adplayer --name adplayer-01
+```
+
+This dedicated preparation command can use an inventory-only profile. It reads
+the two original hashes from the latest matching, clean local preflight log
+and refuses changed originals or an existing backup. It copies the entry DLL,
+runtime configuration and entry native image with metadata into a private TV
+recovery directory, takes individual consistent SQLite backups, records Home
+preferences and SDK-user evidence, and writes a restoration scope/plan.
+It never changes the installed package, preload flags or Home routing.
+
+The archive is transferred through the authenticated root-agent file channel
+from its owned staging directory, with SHA-256 validation and a 4 MiB bound.
+The local copy is saved at `.local/backups/NAME/backup.tar.gz`; the TV copy
+stays under `/opt/usr/share/quiet-frame-backups/NAME/`. Archive copies contain
+private binaries/data and must not be published. The TV copy preserves original
+SMACK attributes; file metadata is also recorded inside the archive.
+If only transfer failed after TV preparation completed, repeat the same command
+with `--fetch-existing`. It verifies/retrieves the completed copy without
+overwriting originals. Incomplete backups remain for inspection; never delete
+one merely to make a retry succeed. A completed backup does not prove a
+successful native UI trial; the executable inverse still needs
+to match the exact planned changes before trial installation.
+
 The launcher uses the application's existing window and explicitly aliases
 filesystem paths to avoid NUI's own `Path` type. A compatibility helper inspects
 the loaded corner-radius property to support either a scalar or a four-corner

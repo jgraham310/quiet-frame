@@ -124,6 +124,21 @@ and rejected requests. Detailed read-only inspection collects entry/cache
 hashes and user records before any backup/install plan. These changes do not
 establish AdPlayer as a validated Frame container or constitute installation.
 
+The owner reported successful compilation of the isolated AdPlayer variant
+against their copied references. Detailed inspection identified its original
+entry/native image and preload state, while the per-user override table was
+empty; no launch UID is inferred from that absence.
+
+Dedicated AdPlayer backup preparation now pins original hashes to a matching
+clean preflight record, preserves selected originals on the TV, makes SQLite
+backups and transfers a bounded archive to private local storage. The archive
+route supports an optional command factory scoped to its generated session
+directory and collects only simple artifact filenames through the existing
+authenticated file protocol, followed by normal cleanup. Tests exercise the
+whole backup recipe on temporary files/SQLite databases, refusal to overwrite
+or accept changed originals, and scoped file collection. These tests do not
+establish TV-side backup or installation success before the owner runs them.
+
 - Native launcher, bridge, Probe and root payload source compile with the
   matching locally held references/SDK.
 - Synthetic registry tests verify targeted apply/restore behavior, preservation
