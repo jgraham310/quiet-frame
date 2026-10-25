@@ -190,6 +190,48 @@ done
 """
 
 
+def launch_context_command():
+    # Match complete argv entries, not substrings (including this shell's own
+    # command text). Never print other arguments or process environments.
+    return r"""set -eu
+printf '\n=== Running native UI / AdPlayer processes ===\n'
+found=0
+for process in /proc/[0-9]*; do
+    test -r "$process/cmdline" || continue
+    if arguments=$(tr '\000' '\n' < "$process/cmdline" 2>/dev/null); then :; else continue; fi
+    case "$arguments" in
+        *com.samsung.tv.csfs*|*com.samsung.tv.quickpanel*|*org.tizen.art-app*|*org.tizen.menu*|*org.tizen.tv-viewer*|*com.samsung.tv.adplayer*|*AdPlayer.dll*|*ArtApp.dll*|*csfs.dll*) ;;
+        *) continue;;
+    esac
+    if matched=$(printf '%s\n' "$arguments" | grep -F -x \
+        -e com.samsung.tv.csfs -e com.samsung.tv.quickpanel \
+        -e org.tizen.art-app -e org.tizen.menu -e org.tizen.tv-viewer \
+        -e com.samsung.tv.adplayer -e AdPlayer.dll -e ArtApp.dll -e csfs.dll \
+        -e /usr/apps/com.samsung.tv.csfs/bin/csfs.dll \
+        -e /opt/usr/apps/com.samsung.tv.csfs/bin/csfs.dll \
+        -e /usr/apps/org.tizen.art-app/bin/ArtApp.dll \
+        -e /opt/usr/apps/org.tizen.art-app/bin/ArtApp.dll \
+        -e /opt/usr/apps/com.samsung.tv.adplayer/bin/AdPlayer.dll \
+        -e /usr/apps/com.samsung.tv.quickpanel/bin/com.samsung.tv.quickpanel.dll \
+        -e /opt/usr/apps/com.samsung.tv.quickpanel/bin/com.samsung.tv.quickpanel.dll); then
+        if details=$(awk '/^(Name|Uid|Gid):/ {print}' "$process/status" 2>/dev/null); then
+            found=$((found + 1))
+            printf '\nPID=%s\nmatched_app_argument=%s\n%s\n' "${process##*/}" "$matched" "$details"
+            if label=$(cat "$process/attr/current" 2>/dev/null); then printf 'SMACK=%s\n' "$label"; fi
+        fi
+    fi
+done
+printf '\nMatched processes: %s\n' "$found"
+printf '\n=== Available user-context utilities (paths only) ===\n'
+for utility in su runuser setpriv; do
+    if command -v "$utility"; then :; else printf '%s: unavailable\n' "$utility"; fi
+done
+printf '\n=== AdPlayer registry flags ===\n'
+sqlite3 -readonly -header -csv /opt/dbspace/.pkgmgr_parser.db "SELECT app_id,app_disable,app_onboot,app_autorestart,app_preload FROM package_app_info WHERE app_id='com.samsung.tv.adplayer';"
+printf '\nRead only: no applications were launched/stopped and no package or routing values were changed.\n'
+"""
+
+
 def decode_pull(stdout):
     digest, encoded = stdout.split("\n", 1)
     if not re.fullmatch(r"[0-9a-f]{64}", digest):
@@ -218,6 +260,7 @@ def main():
     containers = sub.add_parser("containers", help="Read package schemas, owners/labels, manifests and runtime configurations")
     containers.add_argument("--adplayer-details", action="store_true",
                             help="Inspect entry/cache files, per-user records and launch utility help; no changes")
+    sub.add_parser("launch-context", help="Read selected running native UI process identities; does not launch or stop apps")
     backup = sub.add_parser("backup-adplayer", help="Create private recovery copies and snapshots; does not install")
     backup.add_argument("--name", default="adplayer-01", help="Unique backup name; existing originals are never overwritten")
     backup_mode = backup.add_mutually_exclusive_group()
@@ -293,6 +336,8 @@ def main():
         command = platform_command()
     elif args.action == "containers":
         command = containers_command(args.adplayer_details)
+    elif args.action == "launch-context":
+        command = launch_context_command()
     elif args.action in ("sources", "backup-adplayer"):
         command = None
     elif args.action == "pull":
@@ -328,7 +373,7 @@ def main():
     response = result["commands"][0]
     if response["stderr"]:
         print(response["stderr"], file=sys.stderr, end="")
-    if args.action in ("sources", "containers", "backup-adplayer"):
+    if args.action in ("sources", "containers", "backup-adplayer", "launch-context"):
         print(response["stdout"], end="")
     if response["exit_code"] or response["timed_out"]:
         raise RuntimeError(f"Command failed ({response['exit_code']}, timeout={response['timed_out']}). "
@@ -354,7 +399,7 @@ def main():
         print("Verified file saved inside .local/.")
     elif args.action == "inventory":
         print(f"Private inventory saved in {log.relative_to(ROOT)}. Review locally; do not publish raw output.")
-    elif args.action not in ("sources", "containers", "backup-adplayer"):
+    elif args.action not in ("sources", "containers", "backup-adplayer", "launch-context"):
         print(response["stdout"], end="")
     print("UID/EUID 0 verified; root staging cleaned; passwd and SDB key hashes unchanged.")
 

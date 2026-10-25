@@ -145,6 +145,16 @@ resume mode that validates and retains the first original files/snapshots.
 Tests simulate interruption before finalization, verify preserved bytes and
 modification times on resume, and reject a damaged retained copy.
 
+The owner subsequently reported successful resume, verified recovery archives
+on their computer and TV, and clean temporary-root teardown. Installed originals
+and Home routing were unchanged. The SDK UID differs from a user runtime
+directory's owner, so neither is silently selected as the native launch UID.
+A fixed `launch-context` reader now reports selected live native UI process
+identities without dumping other arguments or environments. Synthetic proc
+fixtures check exact-argument matching, exclusion of the reader's own shell,
+absence of unrelated secrets, and an explicit empty result. Actual native
+launch identity, executable trial/restore and visible UI validation remain pending.
+
 - Native launcher, bridge, Probe and root payload source compile with the
   matching locally held references/SDK.
 - Synthetic registry tests verify targeted apply/restore behavior, preservation

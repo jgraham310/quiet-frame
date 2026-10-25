@@ -13,7 +13,8 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 from tv import (check_identity, decode_pull, private_path, PROFILE,
-                inventory_command, home_preferences_command, platform_command, containers_command)
+                inventory_command, home_preferences_command, platform_command, containers_command,
+                launch_context_command)
 from device_profiles import load_profile
 
 
@@ -155,6 +156,60 @@ vconftool() {
             decode_pull("0" * 64 + "\n" + body)
         with self.assertRaises(Exception):
             decode_pull(digest + "\n" + body[:-12])
+
+    def test_launch_context_reads_exact_native_process_arguments_without_secrets_or_mutation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            processes = base / "proc"
+            records = (
+                (101, ["/usr/bin/dotnet", "/usr/apps/com.samsung.tv.csfs/bin/csfs.dll", "private-token"], 1234),
+                (102, ["com.samsung.tv.adplayer", "private-adplayer-token"], 1234),
+                (103, ["sh", "-c", launch_context_command()], 0),
+                (104, ["unrelated-app", "prefix-com.samsung.tv.csfs-suffix", "unrelated-secret"], 4321),
+                (105, ["org.tizen.art-app", "private-art-token"], 1234),
+            )
+            before = {}
+            for pid, arguments, uid in records:
+                process = processes / str(pid)
+                (process / "attr").mkdir(parents=True)
+                (process / "cmdline").write_bytes(b"\0".join(arg.encode() for arg in arguments) + b"\0")
+                (process / "status").write_text(f"Name:\tsynthetic\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\nGid:\t{uid}\t{uid}\t{uid}\t{uid}\n")
+                (process / "attr/current").write_text("synthetic-label\n")
+                (process / "environ").write_bytes(b"ACCOUNT_TOKEN=environment-secret\0")
+                for path in process.rglob("*"):
+                    if path.is_file():
+                        before[path] = path.read_bytes()
+            # Real tr/grep/awk read synthetic proc files. Any mutating launcher
+            # call would fail; SQLite accepts only the fixed read-only query.
+            prefix = """app_launcher() { return 99; }
+sqlite3() {
+    test "$1" = -readonly || return 98
+    printf 'synthetic-registry-row\n'
+}
+"""
+            command = launch_context_command().replace("/proc/[0-9]*", str(processes) + "/[0-9]*")
+            subprocess.run(["sh", "-n"], input=command, text=True, check=True)
+            result = subprocess.run(["sh"], input=prefix + command, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for pid in (101, 102, 105):
+                self.assertIn(f"PID={pid}\n", result.stdout)
+            for pid in (103, 104):
+                self.assertNotIn(f"PID={pid}\n", result.stdout)
+            for secret in ("private-token", "private-adplayer-token", "private-art-token", "unrelated-secret", "environment-secret"):
+                self.assertNotIn(secret, result.stdout + result.stderr)
+            self.assertIn("Matched processes: 3", result.stdout)
+            self.assertIn("Uid:\t1234", result.stdout)
+            self.assertEqual(before, {path: path.read_bytes() for path in before})
+
+    def test_launch_context_reports_no_known_running_ui_without_guessing_a_uid(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            command = launch_context_command().replace("/proc/[0-9]*", temporary + "/[0-9]*")
+            result = subprocess.run(["sh"], input="sqlite3() { :; }\n" + command,
+                                    text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Matched processes: 0", result.stdout)
+            self.assertNotIn("UID=5001", result.stdout)
+            self.assertNotIn("PID=", result.stdout)
 
     def test_private_outputs_cannot_escape_checkout_private_directory(self):
         with self.assertRaises(ValueError):

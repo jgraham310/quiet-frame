@@ -225,6 +225,21 @@ A completed backup does not prove a
 successful native UI trial; the executable inverse still needs
 to match the exact planned changes before trial installation.
 
+The SDK connection's UID and owners of `/run/user/` directories do not by
+themselves establish the native UI's launch user. With Samsung Home visible,
+collect the selected running native UI process identities:
+
+```sh
+python3 tools/tv.py --host YOUR_TV_IPV4 --profile .local/frame.json --firmware 'YOUR_EXACT_FIRMWARE' launch-context
+```
+
+This fixed read-only check matches complete process arguments for native Home,
+Art, settings and AdPlayer, then prints only those known arguments, PID,
+UID/GID fields and SMACK context. It does not print other arguments or process
+environments, and never launches or stops an application. An empty result
+remains an observation; it does not select a default UID. Keep generic mutation
+disabled while launch context and the specific executable inverse are prepared.
+
 The launcher uses the application's existing window and explicitly aliases
 filesystem paths to avoid NUI's own `Path` type. A compatibility helper inspects
 the loaded corner-radius property to support either a scalar or a four-corner
