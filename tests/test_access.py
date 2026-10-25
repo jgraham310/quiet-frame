@@ -2,13 +2,17 @@ import base64
 import gzip
 import hashlib
 from pathlib import Path
+import shlex
+import sqlite3
+import subprocess
 import sys
 import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-from tv import check_identity, decode_pull, private_path, PROFILE, inventory_command
+from tv import (check_identity, decode_pull, private_path, PROFILE,
+                inventory_command, home_preferences_command, platform_command)
 from device_profiles import load_profile
 
 
@@ -40,11 +44,77 @@ class AccessTests(unittest.TestCase):
             check_identity(profile["model"], "OTHER_FIRMWARE", profile)
 
     def test_inventory_reads_registry_and_never_writes_preferences(self):
-        command = inventory_command()
-        self.assertIn("sqlite3 -readonly", command)
-        self.assertNotIn("vconftool set", command)
-        self.assertNotIn("app_launcher", command)
-        self.assertNotIn("systemctl", command)
+        for command in (inventory_command(), platform_command()):
+            self.assertIn("sqlite3 -readonly", command)
+            self.assertNotIn("vconftool set", command)
+            self.assertNotIn("app_launcher", command)
+            self.assertNotIn("systemctl", command)
+            subprocess.run(["sh", "-n"], input=command, text=True, check=True)
+
+    def run_preferences(self, startup, home="printf '%s\\n' 'home-value'"):
+        stub = """set -eu
+vconftool() {
+    case "$2" in
+        db/appfw/home_appid) %s ;;
+        db/appfw/startup_appid) %s ;;
+        *) return 99 ;;
+    esac
+}
+""" % (home, startup)
+        return subprocess.run(["sh"], input=stub + home_preferences_command(),
+                              text=True, capture_output=True)
+
+    def test_inventory_accepts_only_specific_absent_startup_diagnostic(self):
+        diagnostic = "Error: Get: Layer 'system' Key 'db/appfw/startup_appid': No such file or directory"
+        for stream in ("", " >&2"):
+            result = self.run_preferences("printf '%s\\n' " + shlex.quote(diagnostic)
+                                          + stream + "; return 1")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("home-value", result.stdout)
+            self.assertIn("db/appfw/startup_appid: absent (not created)", result.stdout)
+
+    def test_inventory_preserves_existing_startup_value(self):
+        result = self.run_preferences("printf '%s\\n' 'startup-value'")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("startup-value", result.stdout)
+        self.assertNotIn("absent", result.stdout)
+
+    def test_inventory_does_not_hide_other_preference_errors(self):
+        result = self.run_preferences("echo 'Permission denied' >&2; return 7")
+        self.assertEqual(result.returncode, 7)
+        self.assertIn("Permission denied", result.stderr)
+        result = self.run_preferences("echo 'startup-value'", home="return 3")
+        self.assertEqual(result.returncode, 3)
+
+    def test_platform_queries_discover_managed_apps_without_upstream_containers(self):
+        with sqlite3.connect(":memory:") as db:
+            db.executescript("""
+                CREATE TABLE package_app_info (
+                    app_id TEXT, app_type TEXT, app_component TEXT, app_exec TEXT,
+                    app_root_path TEXT, package TEXT, app_api_version TEXT,
+                    app_disable TEXT, app_onboot TEXT, app_autorestart TEXT);
+                CREATE TABLE key_filter (appid TEXT, key TEXT, longpress TEXT,
+                    override TEXT, on_selector TEXT, request TEXT,
+                    target_selector TEXT, args TEXT);
+                INSERT INTO package_app_info VALUES
+                    ('synthetic.managed', 'dotnet', 'uiapp', 'Managed.dll',
+                     '/synthetic', 'synthetic', '6.0', 'false', 'false', 'false'),
+                    ('org.tizen.art-app', 'capp', 'uiapp', '/synthetic/art',
+                     '/synthetic', 'art', '6.0', 'false', 'false', 'false'),
+                    ('synthetic.other', 'webapp', 'uiapp', 'index.html',
+                     '/synthetic', 'other', '6.0', 'false', 'false', 'false');
+                INSERT INTO key_filter VALUES ('synthetic.shell', 'XF86Home',
+                    NULL, NULL, NULL, 'launch', 'synthetic.managed', NULL);
+            """)
+            changes = db.total_changes
+            queries = [shlex.split(line)[-1] for line in platform_command().splitlines()
+                       if line.startswith("sqlite3 ")]
+            results = [db.execute(query).fetchall() for query in queries]
+            self.assertEqual(len(results), 3)
+            self.assertEqual({row[0] for row in results[1]},
+                             {"synthetic.managed", "org.tizen.art-app"})
+            self.assertEqual(results[2][0][1], "XF86Home")
+            self.assertEqual(db.total_changes, changes)
 
     def test_transfer_integrity(self):
         payload = b"synthetic contents only" * 100

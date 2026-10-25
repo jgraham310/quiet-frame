@@ -42,6 +42,13 @@ private local storage, bounded checksum-verified file transfer and reviewed
 single-command execution. Those generalized conveniences were locally
 tested; they are not a claim of end-to-end testing on additional hardware.
 
+Read-only inventory now records the specific missing-startup-preference
+diagnostic without creating that preference, while preserving other failures.
+The fixed `platform` queries collect candidate managed entry points, Home/Art
+key filters and framework paths without enabling generic mutation commands.
+Synthetic tests cover existing/missing/error preference responses and metadata
+queries on a registry without the upstream replacement containers.
+
 ## Launcher and design
 
 The C# launcher, app catalog, native settings bridge and Probe were developed

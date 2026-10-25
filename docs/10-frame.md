@@ -50,6 +50,7 @@ profile can be used for temporary-root testing and read-only collection:
 python3 tools/build.py payloads --target-framework netcoreapp3.1
 python3 tools/tv.py --host YOUR_TV_IPV4 --profile .local/frame.json --firmware 'YOUR_EXACT_FIRMWARE' root-check
 python3 tools/tv.py --host YOUR_TV_IPV4 --profile .local/frame.json --firmware 'YOUR_EXACT_FIRMWARE' inventory
+python3 tools/tv.py --host YOUR_TV_IPV4 --profile .local/frame.json --firmware 'YOUR_EXACT_FIRMWARE' platform
 ```
 
 For an observed runtime family of `6.0`, build with `--target-framework net6.0`.
@@ -65,9 +66,16 @@ a .NET 6 DLL does not retarget that DLL. The separate 3.1 build prevents that
 mistake, but successful compilation alone does not prove this TV can execute it.
 
 These commands still use the vendored temporary-root route; success is not
-assumed. Inventory records stay in `.local/sessions/`. The inventory may fail
-if a schema/key is absent: inspect that difference rather than treating an
-empty result as compatible. `pull` is also available for bounded private
+assumed. Inventory records stay in `.local/sessions/`. A missing
+`db/appfw/startup_appid` is recorded as absent without creating it. Other
+preference errors and incompatible schemas still fail; an absent preference
+does not establish an alternate startup mechanism. The `platform` command
+prints focused read-only application entry points, Home/Art key filters and
+framework/native-library paths, and saves the same private session record.
+It helps identify differences when the original Bixby Promotion/QuickLaunch
+containers are missing; it does not choose or replace another container.
+Review the output privately rather than posting it to a public issue.
+`pull` is also available for bounded private
 reads with the exact profile; generic `exec` and `push` remain blocked while
 `allow_mutation` is false.
 

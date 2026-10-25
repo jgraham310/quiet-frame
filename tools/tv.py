@@ -54,6 +54,26 @@ def check_identity(model, firmware, profile=None, *, mutation=False):
     profile_identity(model, firmware, PROFILE if profile is None else profile, mutation=mutation)
 
 
+def home_preferences_command():
+    # A missing startup key is an observation, never permission to create it.
+    # Only accept vconftool's specific missing-key diagnostic; other errors fail.
+    return """read_optional_vconf() {
+    if output=$(vconftool get "$1" 2>&1); then
+        printf '%s\\n' "$output"
+    else
+        status=$?
+        case "$output" in
+            *"Key '$1': No such file or directory"*)
+                printf '%s: absent (not created)\\n' "$1" ;;
+            *) printf '%s\\n' "$output" >&2; return "$status" ;;
+        esac
+    fi
+}
+vconftool get db/appfw/home_appid
+read_optional_vconf db/appfw/startup_appid
+"""
+
+
 def inventory_command():
     # No source switching, preference writes, unit stops or package modifications.
     # Missing private schemas remain explicit failures, not compatibility evidence.
@@ -63,8 +83,29 @@ readlink -f /usr/share/dotnet.tizen/netcoreapp
 sqlite3 -readonly /opt/dbspace/.pkgmgr_parser.db '.schema package_app_info'
 sqlite3 -readonly -header -csv /opt/dbspace/.pkgmgr_parser.db 'SELECT app_id,app_disable,app_onboot,app_autorestart FROM package_app_info ORDER BY app_id;'
 sqlite3 -readonly /opt/dbspace/.app-context.db '.schema key_filter'
-vconftool get db/appfw/home_appid
-vconftool get db/appfw/startup_appid
+""" + home_preferences_command()
+
+
+def platform_command():
+    # Fixed read-only queries: discover candidates, never select a replacement
+    # container or launch an Art Mode app based on its name alone.
+    return """set -eu
+printf '\\n=== Application types ===\\n'
+sqlite3 -readonly -header -csv /opt/dbspace/.pkgmgr_parser.db 'SELECT app_type,COUNT(*) AS count FROM package_app_info GROUP BY app_type ORDER BY app_type;'
+printf '\\n=== Managed and launcher-related application metadata ===\\n'
+sqlite3 -readonly -header -csv /opt/dbspace/.pkgmgr_parser.db "SELECT app_id,app_type,app_component,app_exec,app_root_path,package,app_api_version,app_disable,app_onboot,app_autorestart FROM package_app_info WHERE lower(app_type) LIKE '%dotnet%' OR lower(app_exec) LIKE '%.dll%' OR lower(app_id) LIKE '%promotion%' OR lower(app_id) LIKE '%quicklaunch%' OR app_id IN ('com.samsung.tv.bixby-promotion','com.samsung.tv.bixby-prov','com.samsung.tv.coba.home','com.samsung.tv.coba.art','org.tizen.art-app','org.tizen.tv-viewer','org.tizen.menu','org.tizen.app-selector') ORDER BY app_id;"
+printf '\\n=== Home and Art application key filters ===\\n'
+sqlite3 -readonly -header -csv /opt/dbspace/.app-context.db "SELECT appid,key,longpress,override,on_selector,request,target_selector,args FROM key_filter WHERE lower(key) LIKE '%home%' OR appid IN ('com.samsung.tv.coba.home','org.tizen.tv-viewer','org.tizen.art-app') ORDER BY appid,key;"
+printf '\\n=== Home preferences ===\\n'
+""" + home_preferences_command() + """
+printf '\\n=== Framework assembly paths ===\\n'
+find -L /usr/share/dotnet.tizen -maxdepth 6 -type f \\( -name Tizen.NUI.dll -o -name Tizen.Applications.Common.dll -o -name Tizen.System.dll -o -name Tizen.dll \\) -print
+printf '\\n=== Native API library paths ===\\n'
+for library in /usr/lib/libcapi-appfw-app-operation-tv.so* /usr/lib/libsource-api.so* /usr/lib/libcapi-media-sound-manager-tv.so*; do
+    if [ -e "$library" ]; then
+        readlink -f "$library"
+    fi
+done
 """
 
 
@@ -109,6 +150,7 @@ def main():
     sub.add_parser("identify", help="Read only the explicitly selected SDB device identity")
     sub.add_parser("doctor", help="Read SDB identity and archive-route capabilities; does not obtain root")
     sub.add_parser("inventory", help="Collect read-only runtime/registry information using temporary root")
+    sub.add_parser("platform", help="Read application entry points, Home routing and framework paths")
     sub.add_parser("root-check", help="Temporarily obtain root and run id; no configuration changes")
     run = sub.add_parser("exec", help="Execute one reviewed command or short script using temporary root")
     source = run.add_mutually_exclusive_group(required=True)
@@ -161,6 +203,8 @@ def main():
         command = "id"
     elif args.action == "inventory":
         command = inventory_command()
+    elif args.action == "platform":
+        command = platform_command()
     elif args.action == "pull":
         private_path(args.local)
         command = pull_command(args.remote)
