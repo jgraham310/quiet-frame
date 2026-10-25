@@ -59,6 +59,8 @@ SDK such as 10.0.302 is installed, `global.json` accepts it; installing SDK 6
 alongside it is not required. Check `dotnet --version` from this checkout if
 SDK selection fails. Keep `--target-framework netcoreapp3.1` for an observed
 3.1 TV even when the Mac uses SDK 10.
+After pulling changes to the access payload source, rebuild payloads for that
+same TV target before opening another temporary-root session.
 The helper chooses the matching output directory and verifies its build manifest,
 runtime configuration and file digests before requesting root. It refuses a
 stale/unrecorded or mismatched build. Merely generating a 3.1 runtimeconfig for

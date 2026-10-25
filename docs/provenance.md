@@ -49,6 +49,15 @@ key filters and framework paths without enabling generic mutation commands.
 Synthetic tests cover existing/missing/error preference responses and metadata
 queries on a registry without the upstream replacement containers.
 
+The fork also changes the root agent's process launcher to pass `/bin/sh`,
+`-c` and the complete command through `ProcessStartInfo.ArgumentList`, instead
+of manually escaping an `Arguments` string. This preserves shell backslashes,
+quotes and newlines across runtime argument parsing. CI exercises the actual
+agent execution method, including the complete generated platform script with
+synthetic TV utility responses, on its host runtimes and compiles the same
+test against .NET Core 3.1 references. This host test does not substitute for
+running the rebuilt payload on the TV's runtime.
+
 ## Launcher and design
 
 The C# launcher, app catalog, native settings bridge and Probe were developed

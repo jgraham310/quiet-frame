@@ -41,6 +41,19 @@ jobs:
         run: python3 tools/build.py payloads
       - name: Build access payloads against .NET Core 3.1 references
         run: python3 tools/build.py payloads --target-framework netcoreapp3.1
+      - name: Test root agent shell argument transport
+        run: |
+          python3 - <<'PY'
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, 'tools')
+          from tv import platform_command
+          fixture = Path('.local/test-fixtures/platform.sh')
+          fixture.parent.mkdir(parents=True, exist_ok=True)
+          fixture.write_text(platform_command())
+          PY
+          dotnet run --project tests/AgentCommandTests.csproj -- .local/test-fixtures/platform.sh
+          dotnet build tests/AgentCommandTests.csproj -p:TV_TARGET_FRAMEWORK=netcoreapp3.1
       - name: Test native catalog logic without Samsung references
         run: dotnet run --project tests/CatalogTests.csproj -- launcher/assets/apps.json
       - name: Test Frame configuration without Samsung references
