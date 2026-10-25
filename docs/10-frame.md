@@ -214,7 +214,14 @@ SMACK attributes; file metadata is also recorded inside the archive.
 If only transfer failed after TV preparation completed, repeat the same command
 with `--fetch-existing`. It verifies/retrieves the completed copy without
 overwriting originals. Incomplete backups remain for inspection; never delete
-one merely to make a retry succeed. A completed backup does not prove a
+one merely to make a retry succeed. If copying and snapshots completed but
+finalization stopped (for example, an older recipe required an unavailable
+`cmp` utility), use `--resume-incomplete` with the same name. This checks all
+retained copies, snapshots, source hashes and metadata, then finishes only
+the missing finalization steps. It never re-copies originals or refreshes
+snapshots. Missing state, changed data or partially written finalization files
+stop for inspection. Content comparisons use the TV's verified SHA-256 utility.
+A completed backup does not prove a
 successful native UI trial; the executable inverse still needs
 to match the exact planned changes before trial installation.
 

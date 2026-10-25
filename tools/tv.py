@@ -220,7 +220,9 @@ def main():
                             help="Inspect entry/cache files, per-user records and launch utility help; no changes")
     backup = sub.add_parser("backup-adplayer", help="Create private recovery copies and snapshots; does not install")
     backup.add_argument("--name", default="adplayer-01", help="Unique backup name; existing originals are never overwritten")
-    backup.add_argument("--fetch-existing", action="store_true", help="Retrieve an already completed TV backup after a transfer failure")
+    backup_mode = backup.add_mutually_exclusive_group()
+    backup_mode.add_argument("--fetch-existing", action="store_true", help="Retrieve an already completed TV backup after a transfer failure")
+    backup_mode.add_argument("--resume-incomplete", action="store_true", help="Validate retained copies/snapshots and finish a backup that stopped before finalization")
     sub.add_parser("sources", help="Run fixed read-only Probe queries for source IDs and native Home handler")
     sub.add_parser("root-check", help="Temporarily obtain root and run id; no configuration changes")
     run = sub.add_parser("exec", help="Execute one reviewed command or short script using temporary root")
@@ -266,7 +268,8 @@ def main():
         expected = observed_hashes(ROOT, model)
         sdk_uid = _capture(client, "id -u")
         command_factory = lambda staging: (backup_command(
-            args.name, staging, expected, sdk_uid, fetch_existing=args.fetch_existing),)
+            args.name, staging, expected, sdk_uid, fetch_existing=args.fetch_existing,
+            resume_incomplete=args.resume_incomplete),)
         collect_files = (BACKUP_ARCHIVE,)
     if args.action == "push":
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,100}", args.name):

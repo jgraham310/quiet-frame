@@ -20,6 +20,9 @@ class AdPlayerBackupTests(unittest.TestCase):
         expected = dict(zip(ORIGINALS, ("a" * 64, "b" * 64)))
         stage = "/home/owner/share/tmp/sdk_tools/archive-root-" + "0" * 16
         self.assertIn("base64 -d", backup_command("trial-01", stage, expected, "1234"))
+        self.assertEqual(shlex.split(backup_command("trial-01", stage, expected, "1234", resume_incomplete=True))[-1], "resume")
+        with self.assertRaises(ValueError):
+            backup_command("trial-01", stage, expected, "1234", fetch_existing=True, resume_incomplete=True)
         for name in ("../other", "a/b", "a;false", "", "a" * 65):
             with self.assertRaises(ValueError):
                 backup_directory(name)
@@ -103,14 +106,18 @@ vconftool() {
     else printf "Error: Get: Layer 'system' Key 'db/appfw/startup_appid': No such file or directory\\n"; return 1; fi
 }
 app_launcher() { printf '%s\\n' '--user=ID'; }
+cmp() { printf 'cmp is unavailable\\n' >&2; return 127; }
 """
             environment = {**os.environ, "PATH": str(utilities) + os.pathsep + os.environ["PATH"]}
             hashes = [hashlib.sha256((app / "bin" / name).read_bytes()).hexdigest() for name in ORIGINALS]
             before = {str(p): p.read_bytes() for root in (app, databases) for p in root.rglob("*") if p.is_file()}
-            def run(name="trial-01", mode="create", expected=None):
+            def run(name="trial-01", mode="create", expected=None, stop_before_finalization=False):
+                body = script
+                if stop_before_finalization:
+                    body = body.replace('\nif [ "$mode" != fetch ]; then\n', '\nexit 127\nif [ "$mode" != fetch ]; then\n', 1)
                 return subprocess.run(["sh", "-s", "--", name, str(stage), "1234",
                                        *(hashes if expected is None else expected), mode],
-                                      input=prefix + script, text=True, capture_output=True, env=environment)
+                                      input=prefix + body, text=True, capture_output=True, env=environment)
             result = run()
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             target = backups / "trial-01"
@@ -129,5 +136,21 @@ app_launcher() { printf '%s\\n' '--user=ID'; }
             bad = run(name="wrong-hash", expected=("0" * 64, hashes[1]))
             self.assertNotEqual(bad.returncode, 0)
             self.assertFalse((backups / "wrong-hash").exists())
+            partial = run(name="resume-good", stop_before_finalization=True)
+            self.assertEqual(partial.returncode, 127, partial.stdout + partial.stderr)
+            retained = backups / "resume-good"
+            first_copies = {str(p): (p.read_bytes(), p.stat().st_mtime_ns)
+                            for p in retained.rglob("*") if p.is_file()}
+            resumed = run(name="resume-good", mode="resume")
+            self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+            self.assertTrue((retained / "complete").exists())
+            self.assertEqual(first_copies, {name: (Path(name).read_bytes(), Path(name).stat().st_mtime_ns)
+                                           for name in first_copies})
+            self.assertEqual(run(name="resume-bad", stop_before_finalization=True).returncode, 127)
+            damaged = backups / "resume-bad/original/AdPlayer.dll"
+            damaged.write_bytes(b"damaged saved copy")
+            self.assertNotEqual(run(name="resume-bad", mode="resume").returncode, 0)
+            self.assertEqual(damaged.read_bytes(), b"damaged saved copy")
+            self.assertFalse((backups / "resume-bad/complete").exists())
             after = {str(p): p.read_bytes() for root in (app, databases) for p in root.rglob("*") if p.is_file()}
             self.assertEqual(before, after)

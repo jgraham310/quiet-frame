@@ -139,6 +139,12 @@ whole backup recipe on temporary files/SQLite databases, refusal to overwrite
 or accept changed originals, and scoped file collection. These tests do not
 establish TV-side backup or installation success before the owner runs them.
 
+Owner feedback established that this Frame lacks `cmp`. Backup comparisons now
+use SHA-256 without that dependency. Incomplete-copy finalization has an explicit
+resume mode that validates and retains the first original files/snapshots.
+Tests simulate interruption before finalization, verify preserved bytes and
+modification times on resume, and reject a damaged retained copy.
+
 - Native launcher, bridge, Probe and root payload source compile with the
   matching locally held references/SDK.
 - Synthetic registry tests verify targeted apply/restore behavior, preservation

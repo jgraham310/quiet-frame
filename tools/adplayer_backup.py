@@ -40,8 +40,10 @@ def observed_hashes(root, model):
     raise ValueError("No verified AdPlayer hashes found locally. Run containers --adplayer-details first.")
 
 
-def backup_command(name, staging, expected, sdk_uid, *, fetch_existing=False):
+def backup_command(name, staging, expected, sdk_uid, *, fetch_existing=False, resume_incomplete=False):
     backup_directory(name)
+    if fetch_existing and resume_incomplete:
+        raise ValueError("Choose either fetching a complete backup or resuming an incomplete one.")
     staging = PurePosixPath(staging)
     if (staging.parent != PurePosixPath("/home/owner/share/tmp/sdk_tools")
             or not re.fullmatch(r"archive-root-[0-9a-f]{16}", staging.name)):
@@ -54,5 +56,5 @@ def backup_command(name, staging, expected, sdk_uid, *, fetch_existing=False):
         raise ValueError("Require both hashes from the verified preflight.")
     encoded = base64.b64encode((ROOT / "recipes/backup-adplayer-originals.sh").read_bytes()).decode("ascii")
     args = (name, str(staging), str(sdk_uid), expected[ORIGINALS[0]], expected[ORIGINALS[1]],
-            "fetch" if fetch_existing else "create")
+            "resume" if resume_incomplete else "fetch" if fetch_existing else "create")
     return "printf '%s' " + shlex.quote(encoded) + " | base64 -d | /bin/sh -s -- " + shlex.join(args)

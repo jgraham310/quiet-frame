@@ -55,10 +55,37 @@ if [ "$mode" = create ]; then
         if [ -d "$user_dir" ]; then stat -c 'runtime directory owner=%u path=%n' "$user_dir" >> "$backup_dir/state/user-evidence.txt"; fi
     done
     app_launcher --help-all > "$backup_dir/state/launch-help.txt" 2>&1 || true
+elif [ "$mode" = resume ]; then
+    test -d "$backup_dir/original"
+    test ! -e "$backup_dir/complete"
+    test ! -e "$backup_dir/backup.tar.gz"
+    test ! -e "$backup_dir/export.tmp.tar.gz"
+    test ! -e "$backup_dir/state/original-files.sha256"
+    test ! -e "$backup_dir/state/restore-plan.txt"
+    for file in live-files-before.sha256 tizen-manifest.xml apps-before.csv file-metadata.txt home-preference.txt startup-preference.txt user-evidence.txt launch-help.txt; do
+        test -s "$backup_dir/state/$file"
+    done
+    for database in .pkgmgr_parser .app-context; do
+        test -s "$backup_dir/state/$database.db"
+        test "$(sqlite3 -readonly "$backup_dir/state/$database.db" 'PRAGMA quick_check;')" = ok
+    done
+    printf '%s  %s\n' "$dll_hash" "$source_dir/bin/AdPlayer.dll" "$config_hash" "$source_dir/bin/AdPlayer.runtimeconfig.json" | sha256sum -c -
+    printf 'Resuming finalization; existing originals and snapshots are retained: %s\n' "$backup_dir"
+elif [ "$mode" != fetch ]; then
+    exit 1
+fi
+if [ "$mode" != fetch ]; then
     sha256sum -c "$backup_dir/state/live-files-before.sha256"
-    cmp "$source_dir/bin/AdPlayer.dll" "$backup_dir/original/AdPlayer.dll"
-    cmp "$source_dir/bin/AdPlayer.runtimeconfig.json" "$backup_dir/original/AdPlayer.runtimeconfig.json"
-    cmp "$source_dir/bin/.native_image/AdPlayer.ni.dll" "$backup_dir/original/AdPlayer.ni.dll"
+    for file in "$source_dir/bin/AdPlayer.dll" "$source_dir/bin/AdPlayer.runtimeconfig.json" "$source_dir/bin/.native_image/AdPlayer.ni.dll"; do
+        copied="$backup_dir/original/$(basename "$file")"
+        test -f "$copied"
+        test ! -L "$copied"
+        source_sum=$(sha256sum "$file")
+        copied_sum=$(sha256sum "$copied")
+        test "${source_sum%% *}" = "${copied_sum%% *}"
+        test "$(stat -c %u:%g:%a "$file")" = "$(stat -c %u:%g:%a "$copied")"
+        test "$(ls -dZ "$file" | awk '{print $1}')" = "$(ls -dZ "$copied" | awk '{print $1}')"
+    done
     (cd "$backup_dir/original" && sha256sum AdPlayer.dll AdPlayer.runtimeconfig.json AdPlayer.ni.dll) > "$backup_dir/state/original-files.sha256"
     cat > "$backup_dir/state/restore-plan.txt" <<'PLAN'
 Manual trial scope: entry DLL, runtime configuration, new deps/resources, entry AOT cache and AdPlayer preload only. No Home/startup or Art/settings routing changes.
@@ -73,8 +100,6 @@ PLAN
     mv "$backup_dir/export.tmp.tar.gz" "$backup_dir/backup.tar.gz"
     sha256sum "$backup_dir/backup.tar.gz" > "$backup_dir/backup.sha256"
     printf 'complete\n' > "$backup_dir/complete"
-elif [ "$mode" != fetch ]; then
-    exit 1
 fi
 test -s "$backup_dir/complete"
 sha256sum -c "$backup_dir/backup.sha256"
