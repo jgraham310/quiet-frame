@@ -14,17 +14,19 @@ public sealed class InputConfig
 public sealed class LauncherConfig
 {
  public string Family {get;set;}="frame";
- public List<InputConfig> Inputs {get;set;}=new List<InputConfig>{
-  new InputConfig{Name="HDMI 1"}, new InputConfig{Name="HDMI 2"},
-  new InputConfig{Name="HDMI 3"}, new InputConfig{Name="HDMI 4"}};
+ public List<InputConfig> Inputs {get;set;}=new List<InputConfig>();
  public string ArtModeAppId {get;set;}
  public string NativeHomeAppId {get;set;}
  public string[] DockAppIds {get;set;}=Array.Empty<string>();
  public bool EnablePrivateSettings {get;set;}
  public bool IsFrame => Family=="frame";
+ public bool HasInputs => Inputs.Count>0;
+ public int HomePage => HasInputs?0:1;
+ public bool IsPageAvailable(int page) => page>=HomePage&&page<=2;
+ public int ResolvePage(int page) => page==0&&!HasInputs?1:page;
  public int InputIndex(int source) => Inputs.FindIndex(input=>input.SourceId==source);
  public bool IsMapped(int source) => InputIndex(source)>=0;
- public string InputAction(int index) => Inputs[index].SourceId.HasValue
+ public string InputAction(int index) => index>=0&&index<Inputs.Count&&Inputs[index].SourceId.HasValue
   ? "hdmi:"+Inputs[index].SourceId.Value : "unmapped";
  public static LauncherConfig Load(string path)
  {
@@ -35,7 +37,7 @@ public sealed class LauncherConfig
  public void Validate()
  {
   if(Family!="frame"&&Family!="u8000f")throw new InvalidDataException("Unknown TV family.");
-  if(Inputs==null||Inputs.Count<1||Inputs.Count>4)throw new InvalidDataException("Configure one to four inputs.");
+  if(Inputs==null||Inputs.Count>4)throw new InvalidDataException("Configure zero to four inputs.");
   var sources=new HashSet<int>();
   foreach(var input in Inputs)
   {

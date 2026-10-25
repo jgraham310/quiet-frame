@@ -6,13 +6,14 @@ import shlex
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 from tv import (check_identity, decode_pull, private_path, PROFILE,
-                inventory_command, home_preferences_command, platform_command)
+                inventory_command, home_preferences_command, platform_command, containers_command)
 from device_profiles import load_profile
 
 
@@ -115,6 +116,29 @@ vconftool() {
                              {"synthetic.managed", "org.tizen.art-app"})
             self.assertEqual(results[2][0][1], "XF86Home")
             self.assertEqual(db.total_changes, changes)
+
+    def test_container_inspection_reads_metadata_without_modifying_packages(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            package = base / "writable/com.samsung.tv.adplayer"
+            (package / "bin").mkdir(parents=True)
+            (package / "info").mkdir()
+            manifest = package / "info/tizen-manifest.xml"
+            manifest.write_text('<manifest package="synthetic.readonly"/>')
+            runtime = package / "bin/AdPlayer.runtimeconfig.json"
+            runtime.write_text('{"runtimeOptions":{"tfm":"synthetic"}}')
+            expected = {str(p): p.read_bytes() for p in package.rglob("*") if p.is_file()}
+            command = containers_command().replace("/opt/usr/apps", str(base / "writable"))
+            command = command.replace("/usr/apps", str(base / "system"))
+            # No host registry is opened; actual filesystem readers inspect only
+            # the private fixture and the remaining fixed directories are absent.
+            prefix = "sqlite3() { printf '%s\\n' 'synthetic schema'; }\n"
+            result = subprocess.run(["sh"], input=prefix + command, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('synthetic.readonly', result.stdout)
+            self.assertIn('runtimeOptions', result.stdout)
+            self.assertIn('Directory absent', result.stdout)
+            self.assertEqual(expected, {str(p): p.read_bytes() for p in package.rglob("*") if p.is_file()})
 
     def test_transfer_integrity(self):
         payload = b"synthetic contents only" * 100

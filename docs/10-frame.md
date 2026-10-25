@@ -98,6 +98,16 @@ Probe's `set-home` branch or changes inputs. Session cleanup removes both
 diagnostic files. Native API errors remain diagnostic results, not verified
 source mappings. No generic mutation permission is needed for this command.
 
+Before adapting installation, `containers` reads package registry schemas,
+owners/security-label listings, and bounded manifest/runtime-configuration
+samples from existing managed packages. These samples include native Home
+and Art Mode for comparison; they are not replacement targets. The command
+does not launch apps, change permissions, register packages or alter files:
+
+```sh
+python3 tools/tv.py --host YOUR_TV_IPV4 --profile .local/frame.json --firmware 'YOUR_EXACT_FIRMWARE' containers
+```
+
 ## Preserve native Frame functions
 
 Samsung documents the normal Power-button path between TV and Art Mode,
@@ -132,7 +142,7 @@ Copy `launcher/assets/tv.json` to ignored `launcher/assets/tv.local.json`.
 | Setting | Required evidence |
 |---|---|
 | `Family` | `frame` for this fork; `u8000f` only for the original controls |
-| `Inputs` | One to four labels and actual source IDs; `null` leaves a card unconfigured |
+| `Inputs` | Zero to four labels and actual source IDs; `[]` opens directly to Apps, and `null` source IDs leave individual cards unconfigured |
 | `ArtModeAppId` | Optional native app ID whose launch actually opens Art Mode; otherwise `null` |
 | `NativeHomeAppId` | Original Samsung Home ID saved before any routing changes; otherwise `null` |
 | `DockAppIds` | Up to three verified app IDs also present in your local app catalog |
@@ -148,6 +158,13 @@ Use matching private reference assemblies; older NUI APIs may still need source
 adaptation. The owner has reported successful Home, QuickLaunch and Probe builds
 against copied Frame references; installation and visible UI checks are pending.
 `tv.local.json` overrides the packaged `tv.json`; local files stay ignored.
+
+For a TV with no HDMI devices connected, keep `Inputs: []`. Apps becomes the
+Home page, only Apps/Settings tabs appear, and Settings Back returns to Apps.
+The toolbar keeps Samsung Home accessible once its shortcut has been verified;
+Art Mode remains available from Settings and the native remote. No source
+probe is required for this setup. Add verified input entries later to restore
+the Inputs page and its original Back-to-input behavior.
 
 The launcher uses the application's existing window and explicitly aliases
 filesystem paths to avoid NUI's own `Path` type. A compatibility helper inspects

@@ -109,6 +109,13 @@ references or proof that the UI has run on the television. Device-specific
 identity and inventory stay in private records; installation, input routing,
 Art Mode behavior and visible UI validation are still pending.
 
+Streaming-only configuration now accepts an empty input list, starts in Apps,
+omits Inputs navigation and returns Settings Back to Apps. Shared configuration
+tests exercise both zero-input and explicitly mapped-input modes. The fixed
+`containers` reader collects package schemas, labels and bounded configuration
+samples without approving replacement of those packages. A temporary-filesystem
+test verifies that its inspection leaves the sampled files unchanged.
+
 - Native launcher, bridge, Probe and root payload source compile with the
   matching locally held references/SDK.
 - Synthetic registry tests verify targeted apply/restore behavior, preservation

@@ -40,7 +40,8 @@ That command targets .NET 6. For an **observed** 3.1 runtime, append
 `--target-framework netcoreapp3.1` and use its isolated `.local/build/netcoreapp3.1/`
 and `.local/package-netcoreapp3.1/` outputs in subsequent commands. An OS version
 such as Tizen 6.0 does not select the CLR target. Matching older NUI references
-may expose additional source changes; no Frame native build is verified yet.
+may expose additional source changes. The owner reported a successful build
+against copied Frame references; on-TV execution remains unvalidated.
 
 This builds `BixbyPromotion.dll`, `QuickLaunch.dll` and `Probe.dll`, then
 assembles `.local/package/`. Public source cards are neutral text placeholders;
@@ -48,11 +49,14 @@ assembles `.local/package/`. Public source cards are neutral text placeholders;
 
 ## Adapt inputs and apps
 
-The adapted UI supports one to four input cards. Copy `launcher/assets/tv.json`
+The adapted UI supports zero to four input cards. The default empty `Inputs`
+list opens directly to Apps and hides the Inputs tab. Copy `launcher/assets/tv.json`
 to ignored `launcher/assets/tv.local.json` and enter labels and source IDs
 observed on the target TV. Remove unused input entries. Leave an unknown
 `SourceId` as `null`: the card displays a setup message rather than switching
 an assumed input. Back also refuses to switch to an unconfigured source.
+When no inputs are configured, Settings Back returns to Apps instead of
+requesting a source switch.
 
 Upload and run Probe to inspect sources and the current main-operation handler:
 

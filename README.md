@@ -10,13 +10,16 @@ The default device profile permits identification/preflight only. It cannot
 deploy the launcher or generate cleanup plans. The original U8000F profile is
 available only when explicitly selected.
 
-The launcher now reads [tv.json](launcher/assets/tv.json): one to four HDMI
+The launcher now reads [tv.json](launcher/assets/tv.json): zero to four HDMI
 inputs, optional verified Art Mode/original Samsung Home app IDs, and up to
 three dock apps. No source integers or Art Mode app IDs are guessed. Private
 brightness/Game Mode controls default off, and Frame mode uses an Art Mode
 tile instead of the original sleep timer. Native power-button behavior is
 left to Samsung. Art Mode's settings, sensors and SmartThings must remain
 available and be checked on the actual device.
+
+With `Inputs: []` (the default), the launcher opens directly to Apps, hides the
+Inputs tab, and returns from Settings to Apps without switching a source.
 
 The upstream project documents work performed on one **Samsung UN75U8000FFXZA (2025
 U8000F)**. It includes **Quiet Home**, a native launcher with a colorful,

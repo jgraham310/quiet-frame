@@ -126,6 +126,39 @@ base64 "$t"
 """
 
 
+def containers_command():
+    # Inspect vendor package metadata only. Names here are comparison samples,
+    # not approved replacement containers or cleanup targets.
+    return """set -eu
+printf '\\n=== Package registry tables ===\\n'
+sqlite3 -readonly /opt/dbspace/.pkgmgr_parser.db "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'package%' ORDER BY name;"
+printf '\\n=== Package metadata schema ===\\n'
+sqlite3 -readonly /opt/dbspace/.pkgmgr_parser.db '.schema package_info'
+printf '\\n=== Application-control metadata schema ===\\n'
+sqlite3 -readonly /opt/dbspace/.pkgmgr_parser.db "SELECT name,sql FROM sqlite_master WHERE type='table' AND (name LIKE '%appcontrol%' OR name LIKE '%privilege%' OR name LIKE '%permission%') ORDER BY name;"
+printf '\\n=== Existing managed package layouts ===\\n'
+for root in /opt/usr/apps/com.samsung.tv.adplayer /opt/usr/apps/com.samsung.tv.ContentsBrowser /opt/usr/apps/com.samsung.tv.quickpanel /usr/apps/com.samsung.tv.csfs /usr/apps/org.tizen.art-app; do
+    printf '\\nPackage directory: %s\\n' "$root"
+    if [ ! -d "$root" ]; then
+        printf 'Directory absent\\n'
+        continue
+    fi
+    stat -c 'owner=%u group=%g mode=%a path=%n' "$root" "$root/bin"
+    if labels=$(ls -ldZ "$root" "$root/bin" 2>&1); then
+        printf '%s\\n' "$labels"
+    else
+        printf 'Security-label listing unavailable: %s\\n' "$labels"
+    fi
+    find "$root" -maxdepth 2 -type f \\( -name '*.runtimeconfig.json' -o -name '*manifest*.xml' \\) -print -exec head -c 12000 {} \\;
+    printf '\\n'
+done
+printf '\\n=== Package and launch tool paths ===\\n'
+for tool in app_launcher pkgcmd pkgmgr-cli aul-launch vconftool chsmack; do
+    if command -v "$tool"; then :; else printf '%s: unavailable\\n' "$tool"; fi
+done
+"""
+
+
 def decode_pull(stdout):
     digest, encoded = stdout.split("\n", 1)
     if not re.fullmatch(r"[0-9a-f]{64}", digest):
@@ -151,6 +184,7 @@ def main():
     sub.add_parser("doctor", help="Read SDB identity and archive-route capabilities; does not obtain root")
     sub.add_parser("inventory", help="Collect read-only runtime/registry information using temporary root")
     sub.add_parser("platform", help="Read application entry points, Home routing and framework paths")
+    sub.add_parser("containers", help="Read package schemas, owners/labels, manifests and runtime configurations")
     sub.add_parser("sources", help="Run fixed read-only Probe queries for source IDs and native Home handler")
     sub.add_parser("root-check", help="Temporarily obtain root and run id; no configuration changes")
     run = sub.add_parser("exec", help="Execute one reviewed command or short script using temporary root")
@@ -206,6 +240,8 @@ def main():
         command = inventory_command()
     elif args.action == "platform":
         command = platform_command()
+    elif args.action == "containers":
+        command = containers_command()
     elif args.action == "sources":
         command = None
     elif args.action == "pull":
@@ -240,7 +276,7 @@ def main():
     response = result["commands"][0]
     if response["stderr"]:
         print(response["stderr"], file=sys.stderr, end="")
-    if args.action == "sources":
+    if args.action in ("sources", "containers"):
         print(response["stdout"], end="")
     if response["exit_code"] or response["timed_out"]:
         raise RuntimeError(f"Command failed ({response['exit_code']}, timeout={response['timed_out']}). "
@@ -250,7 +286,7 @@ def main():
         print("Verified file saved inside .local/.")
     elif args.action == "inventory":
         print(f"Private inventory saved in {log.relative_to(ROOT)}. Review locally; do not publish raw output.")
-    elif args.action != "sources":
+    elif args.action not in ("sources", "containers"):
         print(response["stdout"], end="")
     print("UID/EUID 0 verified; root staging cleaned; passwd and SDB key hashes unchanged.")
 
