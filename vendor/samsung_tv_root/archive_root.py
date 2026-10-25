@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import io
 import ipaddress
 import json
@@ -203,7 +204,8 @@ def _prepare_artifacts(
     )
 
 
-def _stage(client: SdbClient, directory: Path, payloads: Path, package: str) -> None:
+def _stage(client: SdbClient, directory: Path, payloads: Path, package: str,
+           diagnostic_probe: Path | None = None) -> None:
     staging = STAGING_ROOT / package
     _capture(client, f"/bin/mkdir -p {staging}")
     _capture(client, f"/bin/mkdir -p {ON_DEMAND}")
@@ -214,6 +216,14 @@ def _stage(client: SdbClient, directory: Path, payloads: Path, package: str) -> 
         client.push(source, staging / name)
     for name in RUNTIME_CONFIG_FILES:
         client.push(directory / name, staging / name)
+    if diagnostic_probe is not None:
+        for name in ("Probe.dll", "Probe.runtimeconfig.json"):
+            source = diagnostic_probe / name
+            digest = hashlib.sha256(source.read_bytes()).hexdigest()
+            client.push(source, staging / name)
+            actual = _capture(client, f"sha256sum {staging / name}").split()[0]
+            if digest != actual:
+                raise ArchiveRootError("Staged diagnostic probe digest mismatch.")
     for name in ("public.pem", "passwd", "root-agent.token"):
         client.push(directory / name, staging / name)
     archive_name = f"{package}.tar.gz"
@@ -249,6 +259,7 @@ async def probe(
     commands: tuple[str, ...] = (),
     payloads: Path | None = None,
     expected_runtime: str | None = None,
+    diagnostic_probe: Path | None = None,
 ) -> dict[str, object]:
     ipaddress.IPv4Address(tv_host)
     callback = callback_host or route_callback_host(tv_host)
@@ -259,6 +270,13 @@ async def probe(
     assessment = await asyncio.to_thread(_check_target, client)
     if expected_runtime is not None and assessment.runtime != expected_runtime:
         raise ArchiveRootError("TV runtime changed since payload selection; stop and repeat preflight.")
+    if diagnostic_probe is not None:
+        if commands:
+            raise ArchiveRootError("Diagnostic probe accepts no custom commands or arguments.")
+        diagnostic_probe = Path(diagnostic_probe)
+        for name in ("Probe.dll", "Probe.runtimeconfig.json"):
+            if not (diagnostic_probe / name).is_file():
+                raise ArchiveRootError(f"Missing diagnostic probe file: {name}")
     payloads = payloads or payload_directory(
         "common31" if assessment.runtime == "3.1" else "common"
     )
@@ -266,6 +284,10 @@ async def probe(
         if not (payloads / name).is_file():
             raise ArchiveRootError(f"missing payload {payloads / name}")
     package = "archive-root-" + secrets.token_hex(8)
+    if diagnostic_probe is not None:
+        # No arguments: the existing Probe's mutating set-home branch is never
+        # selected. Stage and remove its files with the owned root session.
+        commands = (f"/usr/bin/dotnet {STAGING_ROOT / package}/Probe.dll",)
     staging_started = False
     launch_task: asyncio.Task[CaptureResult] | None = None
     server = RootAgentServer(bind, 0, tv_host, generate_secret(), require_root=True)
@@ -282,7 +304,7 @@ async def probe(
                 server.secret,
             )
             staging_started = True
-            await asyncio.to_thread(_stage, client, directory, payloads, package)
+            await asyncio.to_thread(_stage, client, directory, payloads, package, diagnostic_probe)
             command = (
                 f"/usr/bin/dotnet {STAGING_ROOT / package}/SamsungTvArchiveRoot.dll "
                 f"{package}"

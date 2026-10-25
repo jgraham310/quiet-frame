@@ -32,7 +32,7 @@ def package_launcher(build_dir, source_assets, destination):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("target", choices=["payloads", "launcher", "all"])
+    parser.add_argument("target", choices=["payloads", "probe", "launcher", "all"])
     parser.add_argument("--dotnet", default=os.environ.get("DOTNET", "dotnet"))
     parser.add_argument("--framework", type=Path, default=ROOT / ".local/tv-framework")
     parser.add_argument("--target-framework", choices=tuple(FRAMEWORKS.values()), default="net6.0",
@@ -52,6 +52,8 @@ def main():
         for name in ("Home", "QuickLaunch"):
             jobs.append((ROOT / f"launcher/src/{name}.csproj", name, name,
                          [f"-p:TV_FRAMEWORK_DIR={args.framework.resolve()}"]))
+    if args.target in ("probe", "launcher", "all"):
+        (output_root / "Probe/build-manifest.json").unlink(missing_ok=True)
         jobs.append((ROOT / "launcher/probe/Probe.csproj", "Probe", "Probe", []))
     for project, output, intermediate, extra in jobs:
         subprocess.run([
@@ -64,6 +66,8 @@ def main():
         ], check=True, env={**os.environ, "DOTNET_CLI_TELEMETRY_OPTOUT": "1"})
     if args.target in ("payloads", "all"):
         write_manifest(output_root / "payloads", args.target_framework)
+    if args.target in ("probe", "launcher", "all"):
+        write_manifest(output_root / "Probe", args.target_framework, names=("Probe",))
     if args.target in ("launcher", "all"):
         destination = ROOT / ".local/package"
         if args.target_framework != "net6.0":

@@ -3,8 +3,9 @@
 A Samsung **The Frame** adaptation of [Quiet Tizen](https://github.com/jss8649/quiet-tizen),
 with configurable inputs and conservative preservation of Samsung's Art Mode.
 
-**Frame compatibility is under development; no Frame model/firmware has been
-validated by this fork yet.** Start with the [Frame setup guide](docs/10-frame.md).
+**Frame launcher deployment remains unvalidated.** The owner has reported
+successful compilation against framework DLLs copied from their Frame; visible
+UI and installation checks are still pending. Start with the [Frame setup guide](docs/10-frame.md).
 The default device profile permits identification/preflight only. It cannot
 deploy the launcher or generate cleanup plans. The original U8000F profile is
 available only when explicitly selected.

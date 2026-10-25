@@ -14,7 +14,7 @@ import shlex
 import sys
 from datetime import datetime, timezone
 from device_profiles import DEFAULT_PROFILE, load_profile, check_identity as profile_identity
-from runtime_payloads import FRAMEWORKS, verified_payloads
+from runtime_payloads import FRAMEWORKS, verified_payloads, verified_probe
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "vendor"))
@@ -151,6 +151,7 @@ def main():
     sub.add_parser("doctor", help="Read SDB identity and archive-route capabilities; does not obtain root")
     sub.add_parser("inventory", help="Collect read-only runtime/registry information using temporary root")
     sub.add_parser("platform", help="Read application entry points, Home routing and framework paths")
+    sub.add_parser("sources", help="Run fixed read-only Probe queries for source IDs and native Home handler")
     sub.add_parser("root-check", help="Temporarily obtain root and run id; no configuration changes")
     run = sub.add_parser("exec", help="Execute one reviewed command or short script using temporary root")
     source = run.add_mutually_exclusive_group(required=True)
@@ -205,6 +206,8 @@ def main():
         command = inventory_command()
     elif args.action == "platform":
         command = platform_command()
+    elif args.action == "sources":
+        command = None
     elif args.action == "pull":
         private_path(args.local)
         command = pull_command(args.remote)
@@ -220,10 +223,12 @@ def main():
         command = args.command
     assessment = _check_target(client)
     payloads = verified_payloads(ROOT, assessment.runtime)
+    diagnostic_probe = verified_probe(ROOT, assessment.runtime) if args.action == "sources" else None
     result = asyncio.run(probe(
         args.host, model=model, callback_host=args.callback_host,
         payloads=payloads, expected_runtime=assessment.runtime,
-        commands=(command,), command_timeout=30,
+        commands=() if diagnostic_probe is not None else (command,), command_timeout=30,
+        diagnostic_probe=diagnostic_probe,
     ))
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
     log = ROOT / ".local/sessions" / f"{stamp}.json"
@@ -235,6 +240,8 @@ def main():
     response = result["commands"][0]
     if response["stderr"]:
         print(response["stderr"], file=sys.stderr, end="")
+    if args.action == "sources":
+        print(response["stdout"], end="")
     if response["exit_code"] or response["timed_out"]:
         raise RuntimeError(f"Command failed ({response['exit_code']}, timeout={response['timed_out']}). "
                            f"Private log: {log.relative_to(ROOT)}")
@@ -243,7 +250,7 @@ def main():
         print("Verified file saved inside .local/.")
     elif args.action == "inventory":
         print(f"Private inventory saved in {log.relative_to(ROOT)}. Review locally; do not publish raw output.")
-    else:
+    elif args.action != "sources":
         print(response["stdout"], end="")
     print("UID/EUID 0 verified; root staging cleaned; passwd and SDB key hashes unchanged.")
 

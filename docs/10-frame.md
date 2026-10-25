@@ -81,6 +81,23 @@ Review the output privately rather than posting it to a public issue.
 reads with the exact profile; generic `exec` and `push` remain blocked while
 `allow_mutation` is false.
 
+For native source IDs and the current main-operation Home handler, build the
+standalone diagnostic (no Samsung reference DLLs required) and run its fixed
+read-only mode:
+
+```sh
+python3 tools/build.py probe --target-framework netcoreapp3.1
+python3 tools/tv.py --host YOUR_TV_IPV4 --profile .local/frame.json --firmware 'YOUR_EXACT_FIRMWARE' sources
+```
+
+Select the framework printed by `doctor`, as with the access payloads. `sources`
+requires the diagnostic's recorded build manifest, runtime configuration and
+file digests. It stages Probe inside the temporary root session's own directory,
+checks transfer digests, and executes it without arguments. It never selects
+Probe's `set-home` branch or changes inputs. Session cleanup removes both
+diagnostic files. Native API errors remain diagnostic results, not verified
+source mappings. No generic mutation permission is needed for this command.
+
 ## Preserve native Frame functions
 
 Samsung documents the normal Power-button path between TV and Art Mode,
@@ -128,7 +145,8 @@ helper accepts `--target-framework net6.0` (default) or `netcoreapp3.1`, selecte
 only from observed runtime evidence. For the latter, build output lives in
 `.local/build/netcoreapp3.1/` and launcher packages in `.local/package-netcoreapp3.1/`.
 Use matching private reference assemblies; older NUI APIs may still need source
-adaptation and the complete launcher has not been compiled for a Frame yet.
+adaptation. The owner has reported successful Home, QuickLaunch and Probe builds
+against copied Frame references; installation and visible UI checks are pending.
 `tv.local.json` overrides the packaged `tv.json`; local files stay ignored.
 
 The launcher uses the application's existing window and explicitly aliases

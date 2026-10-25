@@ -2,8 +2,9 @@
 
 ## Frame fork
 
-Read docs/10-frame.md first. This fork targets The Frame, but has no verified
-Frame model/firmware yet. The upstream U8000F observations are historical
+Read docs/10-frame.md first. This fork targets The Frame, but Frame launcher
+deployment is not yet verified. The owner has reported a successful build
+against copied Frame references. The upstream U8000F observations are historical
 evidence, not Frame test results. Default preservation also includes Art Mode,
 Art Store, motion/light sensors, native power behavior and SmartThings.
 Do not import the U8000F smart-extras/context/light-shell groups into a Frame

@@ -49,6 +49,14 @@ key filters and framework paths without enabling generic mutation commands.
 Synthetic tests cover existing/missing/error preference responses and metadata
 queries on a registry without the upstream replacement containers.
 
+The `sources` wrapper mode runs the existing native diagnostic with no arguments
+inside the temporary root session's staging directory. Its standalone build
+has a framework-matched hash manifest; transfers are checked before execution,
+and normal session cleanup also removes the diagnostic files. This mode rejects
+custom commands/arguments and never selects Probe's mutating `set-home` branch.
+The archive-route library accepts this optional diagnostic directory; generic
+mutation permissions in the wrapper remain unchanged.
+
 The fork also changes the root agent's process launcher to pass `/bin/sh`,
 `-c` and the complete command through `ProcessStartInfo.ArgumentList`, instead
 of manually escaping an `Arguments` string. This preserves shell backslashes,
@@ -93,6 +101,13 @@ members, and provide an SVG app-focus outline when native border properties
 are absent. CI exercises the compatibility helper against synthetic old/new
 API shapes. Those fixtures contain no Samsung implementation and do not prove
 that the full native UI compiles or renders on the owner's TV.
+
+The owner subsequently reported successful .NET Core 3.1 compilation of Home,
+QuickLaunch and Probe on their Mac, using the four framework DLLs copied from
+their Frame. This is reported build evidence, not a cloud build with proprietary
+references or proof that the UI has run on the television. Device-specific
+identity and inventory stay in private records; installation, input routing,
+Art Mode behavior and visible UI validation are still pending.
 
 - Native launcher, bridge, Probe and root payload source compile with the
   matching locally held references/SDK.

@@ -38,9 +38,13 @@ jobs:
       - name: Python tests and recipe syntax
         run: python3 -m unittest discover -s tests -v
       - name: Build open-source access payloads
-        run: python3 tools/build.py payloads
+        run: |
+          python3 tools/build.py payloads
+          python3 tools/build.py probe
       - name: Build access payloads against .NET Core 3.1 references
-        run: python3 tools/build.py payloads --target-framework netcoreapp3.1
+        run: |
+          python3 tools/build.py payloads --target-framework netcoreapp3.1
+          python3 tools/build.py probe --target-framework netcoreapp3.1
       - name: Test root agent shell argument transport
         run: |
           python3 - <<'PY'
