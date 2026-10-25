@@ -53,6 +53,11 @@ python3 tools/tv.py --host YOUR_TV_IPV4 --profile .local/frame.json --firmware '
 ```
 
 For an observed runtime family of `6.0`, build with `--target-framework net6.0`.
+The build SDK on your computer is independent of this target. If only a newer
+SDK such as 10.0.302 is installed, `global.json` accepts it; installing SDK 6
+alongside it is not required. Check `dotnet --version` from this checkout if
+SDK selection fails. Keep `--target-framework netcoreapp3.1` for an observed
+3.1 TV even when the Mac uses SDK 10.
 The helper chooses the matching output directory and verifies its build manifest,
 runtime configuration and file digests before requesting root. It refuses a
 stale/unrecorded or mismatched build. Merely generating a 3.1 runtimeconfig for

@@ -63,8 +63,12 @@ download manifest is an attribution/source record, not a license grant.
 The native compilation statements below describe upstream U8000F validation,
 not a build of the changed Frame UI. The Frame fork separately tests host
 tools and shared C# logic; its native UI still needs matching private references
-and hardware validation. `global.json` selects an installed .NET 6 SDK so
-newer host SDKs do not silently change the compiler/restore environment.
+and hardware validation. `global.json` uses a stable .NET 6 SDK when available
+and accepts a newer major SDK when 6 is absent. CI uses isolated SDK 6 and
+10.0.302 installations and verifies the selected SDK before building both
+TV runtime targets. Host test execution may roll forward to the installed
+host runtime; the TV payload runtime configurations and target checks remain
+separate.
 
 - Native launcher, bridge, Probe and root payload source compile with the
   matching locally held references/SDK.

@@ -7,6 +7,21 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - sdk: "6.0.x"
+            sdk_major: "6"
+          - sdk: "10.0.302"
+            sdk_major: "10"
+    env:
+      DOTNET_INSTALL_DIR: ${{ runner.temp }}/quiet-frame-dotnet
+      DOTNET_MULTILEVEL_LOOKUP: "0"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      # Offline test executables target net6.0; allow them to run on the
+      # installed host runtime. This does not change the TV payload target.
+      DOTNET_ROLL_FORWARD: Major
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -14,7 +29,12 @@ jobs:
           python-version: "3.12"
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "6.0.x"
+          dotnet-version: ${{ matrix.sdk }}
+      - name: Verify selected SDK
+        run: |
+          dotnet --info
+          selected_sdk="$(dotnet --version)"
+          test "${selected_sdk%%.*}" = "${{ matrix.sdk_major }}"
       - name: Python tests and recipe syntax
         run: python3 -m unittest discover -s tests -v
       - name: Build open-source access payloads

@@ -109,8 +109,10 @@ under ignored paths.
 ## Development
 
 Host tools use Python 3.12+ and the standard library. Raster artwork conversion
-optionally uses Pillow. Source builds use the .NET 6 SDK to match the tested
-TV; it is an older SDK and should be isolated from unrelated projects.
+optionally uses Pillow. Source builds accept the .NET 6 SDK or a newer stable
+SDK when 6 is absent. CI checks SDK 6 and 10.0.302 in isolated installations.
+The host SDK is separate from the TV's target runtime; building with SDK 10
+does not make a `netcoreapp3.1` payload require .NET 10 on the TV.
 Install Samsung's SDB separately.
 
 Tizen and CLR version numbers are separate. The build helper also accepts

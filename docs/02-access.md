@@ -8,7 +8,10 @@ or private launcher APIs work on another TV.
 
 ## Prepare the computer
 
-Use Python 3.12+, OpenSSL, Samsung's SDB and the .NET 6 SDK. Install SDB through
+Use Python 3.12+, OpenSSL, Samsung's SDB and a .NET SDK (6 or newer; CI checks
+6 and 10.0.302). The SDK on the computer is independent of the TV's CLR target.
+`global.json` falls forward to an installed newer major SDK when 6 is absent.
+Install SDB through
 [Tizen Studio](https://developer.tizen.org/development/tizen-studio/download).
 The repository intentionally does not redistribute Samsung's executable.
 Set `SDB` to the absolute path of your installation. The commands below use a
