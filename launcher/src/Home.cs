@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using Tizen.NUI;
 using Tizen.NUI.BaseComponents;
 using Tizen.Applications;
+using Path = System.IO.Path;
 
 public sealed class QuietHome : NUIApplication
 {
@@ -69,8 +70,8 @@ public sealed class QuietHome : NUIApplication
   try{config=LauncherConfig.Load(Root+"tv.json");}catch(Exception ex){configError="Check tv.json: "+ex.Message;}
   try{fontLoaded=FontClient.Instance.AddCustomFontDirectory(Root+"fonts");}catch{fontLoaded=false;}
   try{library=AppLibrary.Load(Root+"apps.json");}catch(Exception ex){libraryError=ex.Message;}
-  Window.Default.BackgroundColor=new Color(0.96f,0.96f,0.97f,1);
-  Window.Default.Title="Quiet Home";Window.Default.KeyEvent+=OnKey;
+  Window.BackgroundColor=new Color(0.96f,0.96f,0.97f,1);
+  Window.Title="Quiet Home";Window.KeyEvent+=OnKey;
   PreloadArtwork();
   RefreshSource();selected=SourceIndex();BuildPage();
   clockTimer=new Tizen.NUI.Timer(30000);
@@ -83,8 +84,8 @@ public sealed class QuietHome : NUIApplication
  void OpenSettings(string activity){clockTimer?.Start();page=2;area=1;selected=0;editing="";BuildPage();WriteState(activity);}
  void RefreshSource(){try{int n;if(vconf_get_int("memory/system/source_type",out n)==0&&config.IsMapped(n))lastSource=n;}catch{}}
  int SourceIndex(){return Math.Max(0,config.InputIndex(lastSource));}
- View Add(View v){scene.Add(v);Window.Default.Add(v);return v;}
- View Panel(int x,int y,int w,int h,Color color,int radius=18){return Add(new View{Position2D=new Position2D(x,y),Size2D=new Size2D(w,h),BackgroundColor=color,CornerRadius=new Vector4(radius,radius,radius,radius)});}
+ View Add(View v){scene.Add(v);Window.Add(v);return v;}
+ View Panel(int x,int y,int w,int h,Color color,int radius=18){return Add(NuiCompat.Round(new View{Position2D=new Position2D(x,y),Size2D=new Size2D(w,h),BackgroundColor=color},radius));}
  TextLabel Text(string text,int x,int y,int w,int h,float size,Color color,string face="Medium")
  {return (TextLabel)Add(Label(text,x,y,w,h,size,color,face));}
  TextLabel Label(string text,int x,int y,int w,int h,float size,Color color,string face="Medium")
@@ -94,7 +95,7 @@ public sealed class QuietHome : NUIApplication
   var stopwatch=Stopwatch.StartNew();
   if(focusAnimation!=null){focusAnimation.Stop();focusAnimation.Dispose();focusAnimation=null;}
   ParkArtwork();pageArtworkCold=0;
-  foreach(var v in scene){Window.Default.Remove(v);v.Dispose();}scene.Clear();slots.Clear();
+  foreach(var v in scene){Window.Remove(v);v.Dispose();}scene.Clear();slots.Clear();
   Add(new ImageView{ResourceUrl=Root+"free-background.svg",Size2D=new Size2D(1920,1080)});
   Text(page==0?"Home":page==1?"Your Apps":"Quick Settings",76,55,1350,100,76,ink,"Display");
   tabs=new TextLabel[3];string[] nav={"Inputs","Apps","Settings"};int[] tx={54,221,366};int[] tw={153,131,182};
@@ -151,7 +152,7 @@ public sealed class QuietHome : NUIApplication
    var card=Panel(x+w/2,y+h/2,w,h,HexColor(app.Background),18);
    card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
    AddAppArtwork(card,app,w,h);
-   var ring=new View{Size2D=new Size2D(w,h),BackgroundColor=new Color(0,0,0,0),CornerRadius=new Vector4(18,18,18,18),BorderlineWidth=4,BorderlineColor=accent,Opacity=0};
+   var ring=new ImageView{ResourceUrl=Root+"free-focus-ring.svg",Size2D=new Size2D(w,h),Opacity=0};
    card.Add(ring);
    var label=Text(app.Name,x,y+h+14,w,38,27,ink,"Semibold");
    slots.Add(new Slot{Card=card,Shadow=shadow,FocusRing=ring,Label=label,Name=app.Name,Action="app:"+app.Id,Description=app.Description,Row=i/5,X=x,Y=y,W=w,H=h});
@@ -184,7 +185,7 @@ public sealed class QuietHome : NUIApplication
   // Keep the real image views alive on the scene; moving between pages never
   // destroys their decoded textures. The zero-opacity parent is never drawn.
   artworkPreloadRoot=new View{Size2D=new Size2D(1920,1080),Opacity=0};
-  Window.Default.Add(artworkPreloadRoot);
+  Window.Add(artworkPreloadRoot);
   foreach(var app in library)if(!app.Utility)GetArtwork(app,328,184);
   foreach(var id in config.DockAppIds){
    var app=library.Find(a=>a.Id==id);if(app!=null)GetArtwork(app,253,126);
@@ -197,12 +198,11 @@ public sealed class QuietHome : NUIApplication
   bool cover=app.Fit=="cover",full=cover||app.Fit=="contain-full";
   int iw=full?w:w-54,ih=full?h:h-40;var crop=app.Crop;
   float cropWidth=crop==null?1:crop[2],cropHeight=crop==null?1:crop[3];
-  var image=new ImageView{
+  var image=NuiCompat.Round(new ImageView{
    Position2D=new Position2D((w-iw)/2,(h-ih)/2),Size2D=new Size2D(iw,ih),
    FittingMode=cover?FittingModeType.ScaleToFill:FittingModeType.ShrinkToFit,
-   SamplingMode=SamplingModeType.BoxThenLanczos,
    DesiredWidth=(int)Math.Ceiling(iw*2/cropWidth),DesiredHeight=(int)Math.Ceiling(ih*2/cropHeight),
-   ReleasePolicy=ReleasePolicyType.Destroyed,CornerRadius=new Vector4(18,18,18,18)};
+   ReleasePolicy=ReleasePolicyType.Destroyed},18);
   if(crop!=null)image.PixelArea=new RelativeVector4(crop[0],crop[1],crop[2],crop[3]);
   cached=new CachedArtwork{Image=image,Parent=artworkPreloadRoot};
   artworkCache.Add(key,cached);artworkViewsCreated++;
@@ -272,12 +272,12 @@ public sealed class QuietHome : NUIApplication
  {
   if(focusAnimation!=null){focusAnimation.Stop();focusAnimation.Dispose();focusAnimation=null;}
   if(animate)focusAnimation=new Animation(180);
-  for(int i=0;i<3;i++){tabs[i].TextColor=i==page?ink:muted;tabs[i].FontFamily="Quiet Inter "+(i==page?"Semibold":"Medium");tabs[i].BackgroundColor=area==0&&i==page?new Color(1,1,1,.7f):new Color(0,0,0,0);tabs[i].CornerRadius=new Vector4(34,34,34,34);}
+  for(int i=0;i<3;i++){tabs[i].TextColor=i==page?ink:muted;tabs[i].FontFamily="Quiet Inter "+(i==page?"Semibold":"Medium");tabs[i].BackgroundColor=area==0&&i==page?new Color(1,1,1,.7f):new Color(0,0,0,0);NuiCompat.Round(tabs[i],34);}
   for(int i=0;i<slots.Count;i++){
    var s=slots[i];bool f=area!=0&&selected==i;
    float scale=f?(page==1&&s.Row>=0?1.055f:page==2&&s.Row>=0?1.035f:s.Row==0?1.05f:s.Row==1?1.20f:1.10f):1;
-   s.Card.BorderlineWidth=page==1&&s.Row>=0?(f?4:1):s.Row==0?1:0;
-   s.Card.BorderlineColor=page==1&&f?accent:new Color(1,1,1,f?.8f:.28f);
+   NuiCompat.Border(s.Card,page==1&&s.Row>=0?(f?4:1):s.Row==0?1:0,
+    page==1&&f?accent:new Color(1,1,1,f?.8f:.28f));
    var pos=new Position(s.X+s.W/2f,s.Y+s.H/2f-(f&&(s.Row==0||page==1&&s.Row>=0)?5:0),0);
    if(animate){focusAnimation.AnimateTo(s.Card,"Scale",new Vector3(scale,scale,1));focusAnimation.AnimateTo(s.Card,"Position",pos);}else{s.Card.Scale=new Vector3(scale,scale,1);s.Card.Position=pos;}
    if(s.Shadow!=null)s.Shadow.Opacity=f?1:.55f;

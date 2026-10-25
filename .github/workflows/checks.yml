@@ -58,7 +58,12 @@ jobs:
         run: dotnet run --project tests/CatalogTests.csproj -- launcher/assets/apps.json
       - name: Test Frame configuration without Samsung references
         run: dotnet run --project tests/LauncherConfigTests.csproj -- launcher/assets/tv.json
+      - name: Test NUI compatibility with synthetic API shapes
+        run: |
+          dotnet run --project tests/NuiCompatTests.csproj
+          dotnet run --project tests/NuiCompatTests.csproj -p:NUI_TEST_SHAPE=Vector
       - name: Compile shared launcher logic against .NET Core 3.1 references
         run: |
           dotnet build tests/CatalogTests.csproj -p:TV_TARGET_FRAMEWORK=netcoreapp3.1
           dotnet build tests/LauncherConfigTests.csproj -p:TV_TARGET_FRAMEWORK=netcoreapp3.1
+          dotnet build tests/NuiCompatTests.csproj -p:TV_TARGET_FRAMEWORK=netcoreapp3.1

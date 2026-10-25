@@ -131,6 +131,16 @@ Use matching private reference assemblies; older NUI APIs may still need source
 adaptation and the complete launcher has not been compiled for a Frame yet.
 `tv.local.json` overrides the packaged `tv.json`; local files stay ignored.
 
+The launcher uses the application's existing window and explicitly aliases
+filesystem paths to avoid NUI's own `Path` type. A compatibility helper inspects
+the loaded corner-radius property to support either a scalar or a four-corner
+vector without tying that choice to the CLR target. Missing native border
+properties are optional decoration; the app grid has an SVG focus outline and
+other controls retain scale/label focus. Image loading uses the framework's
+default sampling rather than requiring newer sampling enums/properties.
+Synthetic helper checks cover both radius shapes, but the full native build
+must still use the owner's matching assemblies and be tested on the TV.
+
 Before enabling mutation, establish runtime/assembly compatibility, package
 entry points, owners/labels, user IDs, source IDs, native APIs, selectors,
 consistent snapshots and specific inverse operations. The existing install/

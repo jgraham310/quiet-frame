@@ -86,6 +86,14 @@ TV runtime targets. Host test execution may roll forward to the installed
 host runtime; the TV payload runtime configurations and target checks remain
 separate.
 
+NUI source adaptations also address the owner's compiler diagnostics: use
+the application's existing window, disambiguate filesystem paths, adapt scalar
+and vector corner-radius properties, avoid requiring newer image sampling
+members, and provide an SVG app-focus outline when native border properties
+are absent. CI exercises the compatibility helper against synthetic old/new
+API shapes. Those fixtures contain no Samsung implementation and do not prove
+that the full native UI compiles or renders on the owner's TV.
+
 - Native launcher, bridge, Probe and root payload source compile with the
   matching locally held references/SDK.
 - Synthetic registry tests verify targeted apply/restore behavior, preservation
