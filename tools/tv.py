@@ -17,6 +17,7 @@ from device_profiles import DEFAULT_PROFILE, load_profile, check_identity as pro
 from runtime_payloads import FRAMEWORKS, verified_payloads, verified_probe
 from adplayer_backup import (ARCHIVE as BACKUP_ARCHIVE, backup_directory,
                              backup_command, observed_hashes)
+from adplayer_trial import make_plan, load_plan, trial_command
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "vendor"))
@@ -261,6 +262,11 @@ def main():
     containers.add_argument("--adplayer-details", action="store_true",
                             help="Inspect entry/cache files, per-user records and launch utility help; no changes")
     sub.add_parser("launch-context", help="Read selected running native UI process identities; does not launch or stop apps")
+    trial = sub.add_parser("adplayer-trial", help="Prepare, install, launch or restore one pinned private manual trial; no Home routing changes")
+    trial.add_argument("operation", choices=("prepare", "install", "launch", "restore"))
+    trial.add_argument("--name", default="trial-01", help="Unique immutable trial name")
+    trial.add_argument("--backup", default="adplayer-01", help="Existing verified recovery backup (prepare only)")
+    trial.add_argument("--package", type=Path, help="Built private AdPlayer package (prepare only)")
     backup = sub.add_parser("backup-adplayer", help="Create private recovery copies and snapshots; does not install")
     backup.add_argument("--name", default="adplayer-01", help="Unique backup name; existing originals are never overwritten")
     backup_mode = backup.add_mutually_exclusive_group()
@@ -303,6 +309,24 @@ def main():
     check_identity(model, args.firmware, profile, mutation=args.action in ("exec", "push"))
     command_factory = None
     collect_files = ()
+    session_files = ()
+    assessment = None
+    if args.action == "adplayer-trial":
+        if profile["family"] != "frame":
+            raise ValueError("This dedicated trial requires an exact private Frame profile.")
+        assessment = _check_target(client)
+        if args.operation == "prepare":
+            framework = FRAMEWORKS[assessment.runtime]
+            package = args.package or ROOT / (".local/package" + ("-" + framework if framework != "net6.0" else "") + "-AdPlayer")
+            trial_directory, plan = make_plan(ROOT, args.name, args.backup, package, model, args.firmware, assessment.runtime)
+            session_files = (trial_directory / "trial.tar.gz",)
+        else:
+            if args.package:
+                raise ValueError("Only prepare accepts a package; later operations use the frozen trial.")
+            trial_directory, plan = load_plan(ROOT, args.name, model, args.firmware, assessment.runtime)
+        print(f"Pinned trial: {args.name}; launch UID/GID {plan['uid']}:{plan['gid']}; enabled catalog apps {plan['catalog_app_count']}")
+        print(f"Private plan and inverse: {trial_directory.relative_to(ROOT)}")
+        command_factory = lambda staging: (trial_command(trial_directory, args.operation, staging),)
     if args.action == "backup-adplayer":
         backup_directory(args.name)
         backup_local = private_path(ROOT / ".local/backups" / args.name / "backup.tar.gz")
@@ -338,7 +362,7 @@ def main():
         command = containers_command(args.adplayer_details)
     elif args.action == "launch-context":
         command = launch_context_command()
-    elif args.action in ("sources", "backup-adplayer"):
+    elif args.action in ("sources", "backup-adplayer", "adplayer-trial"):
         command = None
     elif args.action == "pull":
         private_path(args.local)
@@ -353,7 +377,7 @@ def main():
         if args.arg:
             raise ValueError("--arg requires --script.")
         command = args.command
-    assessment = _check_target(client)
+    assessment = assessment or _check_target(client)
     payloads = verified_payloads(ROOT, assessment.runtime)
     diagnostic_probe = verified_probe(ROOT, assessment.runtime) if args.action == "sources" else None
     result = asyncio.run(probe(
@@ -362,6 +386,7 @@ def main():
         commands=() if diagnostic_probe is not None or command_factory is not None else (command,), command_timeout=30,
         diagnostic_probe=diagnostic_probe,
         command_factory=command_factory, collect_files=collect_files,
+        session_files=session_files,
     ))
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
     log = ROOT / ".local/sessions" / f"{stamp}.json"
@@ -373,7 +398,7 @@ def main():
     response = result["commands"][0]
     if response["stderr"]:
         print(response["stderr"], file=sys.stderr, end="")
-    if args.action in ("sources", "containers", "backup-adplayer", "launch-context"):
+    if args.action in ("sources", "containers", "backup-adplayer", "launch-context", "adplayer-trial"):
         print(response["stdout"], end="")
     if response["exit_code"] or response["timed_out"]:
         raise RuntimeError(f"Command failed ({response['exit_code']}, timeout={response['timed_out']}). "
@@ -399,7 +424,7 @@ def main():
         print("Verified file saved inside .local/.")
     elif args.action == "inventory":
         print(f"Private inventory saved in {log.relative_to(ROOT)}. Review locally; do not publish raw output.")
-    elif args.action not in ("sources", "containers", "backup-adplayer", "launch-context"):
+    elif args.action not in ("sources", "containers", "backup-adplayer", "launch-context", "adplayer-trial"):
         print(response["stdout"], end="")
     print("UID/EUID 0 verified; root staging cleaned; passwd and SDB key hashes unchanged.")
 

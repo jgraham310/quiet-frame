@@ -207,7 +207,7 @@ def _prepare_artifacts(
 
 
 def _stage(client: SdbClient, directory: Path, payloads: Path, package: str,
-           diagnostic_probe: Path | None = None) -> None:
+           diagnostic_probe: Path | None = None, session_files: tuple[Path, ...] = ()) -> None:
     staging = STAGING_ROOT / package
     _capture(client, f"/bin/mkdir -p {staging}")
     _capture(client, f"/bin/mkdir -p {ON_DEMAND}")
@@ -226,6 +226,11 @@ def _stage(client: SdbClient, directory: Path, payloads: Path, package: str,
             actual = _capture(client, f"sha256sum {staging / name}").split()[0]
             if digest != actual:
                 raise ArchiveRootError("Staged diagnostic probe digest mismatch.")
+    for source in session_files:
+        digest = hashlib.sha256(source.read_bytes()).hexdigest()
+        client.push(source, staging / source.name)
+        if _capture(client, f"sha256sum {staging / source.name}").split()[0] != digest:
+            raise ArchiveRootError("Staged session file digest mismatch.")
     for name in ("public.pem", "passwd", "root-agent.token"):
         client.push(directory / name, staging / name)
     archive_name = f"{package}.tar.gz"
@@ -264,6 +269,7 @@ async def probe(
     diagnostic_probe: Path | None = None,
     command_factory: Callable[[PurePosixPath], tuple[str, ...]] | None = None,
     collect_files: tuple[str, ...] = (),
+    session_files: tuple[Path, ...] = (),
 ) -> dict[str, object]:
     ipaddress.IPv4Address(tv_host)
     callback = callback_host or route_callback_host(tv_host)
@@ -278,6 +284,14 @@ async def probe(
         raise ArchiveRootError("Session command factory cannot be combined with other command modes.")
     if any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,100}", name) for name in collect_files):
         raise ArchiveRootError("Collect only simple filenames inside the owned session directory.")
+    reserved = {*PAYLOAD_FILES, *RUNTIME_CONFIG_FILES, 'Probe.dll', 'Probe.runtimeconfig.json',
+                'public.pem', 'passwd', 'root-agent.token', 'launcher.log'}
+    session_files = tuple(Path(path) for path in session_files)
+    if (len(session_files) > 4 or len({path.name for path in session_files}) != len(session_files)
+            or any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,100}", path.name)
+                   or path.name in reserved or not path.is_file() or path.is_symlink()
+                   or path.stat().st_size > 4194304 for path in session_files)):
+        raise ArchiveRootError("Stage only bounded, distinct session files with non-reserved simple filenames.")
     if diagnostic_probe is not None:
         if commands:
             raise ArchiveRootError("Diagnostic probe accepts no custom commands or arguments.")
@@ -314,7 +328,7 @@ async def probe(
                 server.secret,
             )
             staging_started = True
-            await asyncio.to_thread(_stage, client, directory, payloads, package, diagnostic_probe)
+            await asyncio.to_thread(_stage, client, directory, payloads, package, diagnostic_probe, session_files)
             command = (
                 f"/usr/bin/dotnet {STAGING_ROOT / package}/SamsungTvArchiveRoot.dll "
                 f"{package}"

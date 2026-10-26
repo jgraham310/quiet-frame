@@ -155,6 +155,27 @@ fixtures check exact-argument matching, exclusion of the reader's own shell,
 absence of unrelated secrets, and an explicit empty result. Actual native
 launch identity, executable trial/restore and visible UI validation remain pending.
 
+Subsequent owner output identified native Home and Art running with the same
+real/effective UID/GID, distinct from the SDK account, with AdPlayer absent
+from the selected live processes. That identity evidence now gates a dedicated
+manual-trial plan. Device-specific numeric identities remain private.
+
+The trial generator pins matching recovery/build evidence and prepares an
+immutable private archive, explicit file/preload changes and an executable
+inverse before installation. A short-lived app-control sender checks its user
+context, requires an explicit Quiet Home marker, propagates native failures and
+destroys created handles. Preparation can test handle creation without launch.
+The transport stages bounded extra files only inside its owned root session,
+verifies digests and retains normal cleanup checks.
+
+Synthetic tests exercise complete preparation/install/launch/restore, the
+pinned archive entry path, interruption at each mutation phase and during
+restoration, preservation of first backups/unrelated registry data, metadata
+and path drift refusals, wrong user IDs, and refusal of an old inverse after
+a newer trial. Helper API tests cover failures/exceptions and handle cleanup
+without Samsung libraries. These checks are not evidence of a visible native
+UI or successful helper execution on the actual TV; those remain pending.
+
 - Native launcher, bridge, Probe and root payload source compile with the
   matching locally held references/SDK.
 - Synthetic registry tests verify targeted apply/restore behavior, preservation

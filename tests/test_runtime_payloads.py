@@ -181,6 +181,38 @@ class RuntimePayloadTests(unittest.TestCase):
                 asyncio.run(probe("192.0.2.50", callback_host="192.0.2.51", collect_files=("../private",)))
             server.assert_not_called()
 
+    def test_session_upload_verifies_owned_path_digest(self):
+        payloads = self.build_fixture('netcoreapp3.1')
+        archive = self.root / 'trial.tar.gz'
+        archive.write_bytes(b'synthetic trial')
+        client = Mock()
+        with patch('samsung_tv_root.archive_root._capture', return_value=hashlib.sha256(archive.read_bytes()).hexdigest() + '  staged'):
+            _stage(client, self.root, payloads, 'archive-root-synthetic', session_files=(archive,))
+        self.assertIn('/home/owner/share/tmp/sdk_tools/archive-root-synthetic/trial.tar.gz',
+                      [str(call.args[1]) for call in client.push.call_args_list])
+        with patch('samsung_tv_root.archive_root._capture', return_value='0' * 64 + '  staged'):
+            with self.assertRaisesRegex(ArchiveRootError, 'digest mismatch'):
+                _stage(client, self.root, payloads, 'archive-root-synthetic', session_files=(archive,))
+
+    def test_session_upload_rejects_reserved_names_symlinks_duplicates_and_size(self):
+        reserved = self.root / 'passwd'
+        reserved.write_bytes(b'synthetic')
+        regular = self.root / 'trial.tar.gz'
+        regular.write_bytes(b'synthetic')
+        link = self.root / 'link.tar.gz'
+        link.symlink_to(regular)
+        large = self.root / 'large.tar.gz'
+        with large.open('wb') as output:
+            output.truncate(4194305)
+        with patch('samsung_tv_root.archive_root.SdbClient'), \
+             patch('samsung_tv_root.archive_root.find_sdb', return_value='synthetic-sdb'), \
+             patch('samsung_tv_root.archive_root._check_target', return_value=Mock(runtime='3.1')), \
+             patch('samsung_tv_root.archive_root.RootAgentServer') as server:
+            for files in ((reserved,), (link,), (regular,regular), (large,)):
+                with self.subTest(files=files), self.assertRaisesRegex(ArchiveRootError, 'bounded, distinct'):
+                    asyncio.run(probe('192.0.2.50', callback_host='192.0.2.51', session_files=files))
+            server.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

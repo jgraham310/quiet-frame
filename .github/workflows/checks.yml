@@ -41,10 +41,12 @@ jobs:
         run: |
           python3 tools/build.py payloads
           python3 tools/build.py probe
+          python3 tools/build.py trial-helper
       - name: Build access payloads against .NET Core 3.1 references
         run: |
           python3 tools/build.py payloads --target-framework netcoreapp3.1
           python3 tools/build.py probe --target-framework netcoreapp3.1
+          python3 tools/build.py trial-helper --target-framework netcoreapp3.1
       - name: Test root agent shell argument transport
         run: |
           python3 - <<'PY'
@@ -60,6 +62,10 @@ jobs:
           dotnet build tests/AgentCommandTests.csproj -p:TV_TARGET_FRAMEWORK=netcoreapp3.1
       - name: Test native catalog logic without Samsung references
         run: dotnet run --project tests/CatalogTests.csproj -- launcher/assets/apps.json
+      - name: Test trial launch errors and handle cleanup without native APIs
+        run: |
+          dotnet run --project tests/TrialLaunchTests.csproj
+          dotnet build tests/TrialLaunchTests.csproj -p:TV_TARGET_FRAMEWORK=netcoreapp3.1
       - name: Test Frame configuration without Samsung references
         run: dotnet run --project tests/LauncherConfigTests.csproj -- launcher/assets/tv.json
       - name: Test NUI compatibility with synthetic API shapes

@@ -222,8 +222,8 @@ the missing finalization steps. It never re-copies originals or refreshes
 snapshots. Missing state, changed data or partially written finalization files
 stop for inspection. Content comparisons use the TV's verified SHA-256 utility.
 A completed backup does not prove a
-successful native UI trial; the executable inverse still needs
-to match the exact planned changes before trial installation.
+successful native UI trial. The dedicated trial workflow below generates
+an executable inverse for the exact planned files before installation.
 
 The SDK connection's UID and owners of `/run/user/` directories do not by
 themselves establish the native UI's launch user. With Samsung Home visible,
@@ -239,6 +239,89 @@ UID/GID fields and SMACK context. It does not print other arguments or process
 environments, and never launches or stops an application. An empty result
 remains an observation; it does not select a default UID. Keep generic mutation
 disabled while launch context and the specific executable inverse are prepared.
+
+### Experimental manual AdPlayer trial
+
+This separate workflow is for an explicitly inspected AdPlayer container,
+verified recovery archives on both the TV and computer, and matching clean
+`launch-context` evidence for native Home and Art. It is not a generally
+validated Frame installer. The older U8000F recipes remain incompatible.
+These dedicated commands require the exact private Frame profile and a pinned
+private trial plan; they do not enable generic `exec`/`push` or cleanup groups.
+
+Rebuild with the matching private references. The AdPlayer variant now also
+builds a short-lived standalone app-control helper and records package hashes:
+
+```sh
+python3 tools/build.py launcher --framework .local/tv-framework --target-framework netcoreapp3.1 --home-assembly AdPlayer
+python3 tools/tv.py --host YOUR_TV_IPV4 --profile .local/frame.json --firmware 'YOUR_EXACT_FIRMWARE' adplayer-trial prepare --name trial-01 --backup adplayer-01
+```
+
+Use the actual CLR target, as above. Preparation checks the local recovery
+archive against a clean authenticated session, verifies its original-file
+hashes and the recorded build, and creates an immutable plan/archive/inverse
+under `.local/trials/NAME/`. It filters catalog shortcuts against enabled IDs
+in the recovery snapshot; it does not uninstall apps or modify the source
+catalog. The first trial requires `Inputs: []`, private settings off and native
+Home/Art shortcuts unassigned.
+
+Preparation stages only a bounded, checksum-verified archive inside the root
+session's own directory, retains the pinned trial under
+`/opt/usr/share/quiet-frame-trials/NAME/`, and verifies the current native UI
+UID/GID. It resolves that exact account and runs the helper through `runuser`
+with only the session runtime directory and, when present, the native UI's
+session-bus address. Other process environment values are not copied or
+printed. The helper independently checks all four real/effective user/group
+IDs and creates/destroys an app-control handle without sending a launch request.
+Preparation leaves installed files, preload and Home routing unchanged.
+
+After preparation succeeds, the explicit install and launch operations are:
+
+```sh
+python3 tools/tv.py --host YOUR_TV_IPV4 --profile .local/frame.json --firmware 'YOUR_EXACT_FIRMWARE' adplayer-trial install --name trial-01
+python3 tools/tv.py --host YOUR_TV_IPV4 --profile .local/frame.json --firmware 'YOUR_EXACT_FIRMWARE' adplayer-trial launch --name trial-01
+```
+
+| Trial change | Specific inverse |
+|---|---|
+| Replace `bin/AdPlayer.dll` and its runtime configuration | Restore the saved originals with their ownership, mode and SMACK labels |
+| Add `bin/AdPlayer.deps.json` and `res/quiet-home` | Remove only the planned, hash-verified additions; refuse unexpected paths |
+| Move only `.native_image/AdPlayer.ni.dll` outside the execution path | Restore the saved entry image; retain other native libraries/images |
+| Set only AdPlayer's `app_preload` from `true` to `false` | Restore only that field to the recorded original value |
+
+Install refuses a running AdPlayer, changed originals/metadata, incompatible
+registry flags, existing resources/deps or a previously started installation.
+It prepares all resources off to the side, checks labels and permissions,
+then uses individual atomic renames for installed paths. The full operation
+is not one atomic transaction. Other app files, account data and native
+Home/startup, Art, power and settings routing are outside its scope.
+
+Launch sends the compiled `quiet_page=home` marker to AdPlayer through the
+native app-control API. A successful API result means a request was submitted;
+the owner must still verify the visible UI, remote, streaming apps, volume,
+native settings and return to Samsung Home. Keep the TV on until each root
+session reports normal cleanup. Restart/standby testing comes later.
+
+Undo with the same exact profile and trial name:
+
+```sh
+python3 tools/tv.py --host YOUR_TV_IPV4 --profile .local/frame.json --firmware 'YOUR_EXACT_FIRMWARE' adplayer-trial restore --name trial-01
+```
+
+Restore checks the pinned controls, retained backup, current hashes and metadata,
+and selected registry fields before stopping only AdPlayer under the recorded
+UID. It accepts the known mixture of original/new paths left by an interrupted
+install and can resume interrupted restoration. Partial temporary copies are
+retained outside the package for inspection. Unrelated registry changes remain
+intact; no snapshot replaces a live database. A completed old restore refuses
+to overwrite a later trial. The on-TV `restore.sh` is also pinned to the saved
+control manifest, for reviewed recovery through an existing root session.
+
+If any phase fails, inspect its private log and use this inverse for an
+installation that started. Do not retry install, remove guards, delete the
+first backup or overwrite a trial name. A drift refusal requires inspecting
+the actual changed state. The tests exercise these operations on temporary
+files/databases with native APIs stubbed; they do not establish TV execution.
 
 The launcher uses the application's existing window and explicitly aliases
 filesystem paths to avoid NUI's own `Path` type. A compatibility helper inspects

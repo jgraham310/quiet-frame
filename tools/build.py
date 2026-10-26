@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Build locally; never redistribute Samsung reference assemblies."""
 import argparse
+import hashlib
+import json
 import os
 from pathlib import Path
 import shutil
@@ -35,9 +37,25 @@ def package_launcher(build_dir, source_assets, destination, home_assembly="Bixby
     (assets / "tv.local.json").unlink(missing_ok=True)
 
 
+def write_trial_manifest(destination, framework, helper):
+    helper_dir = destination / "trial-helper"
+    helper_dir.mkdir(exist_ok=True)
+    for suffix in (".dll", ".runtimeconfig.json", ".deps.json"):
+        shutil.copyfile(helper / ("TrialLaunch" + suffix), helper_dir / ("TrialLaunch" + suffix))
+    files = [destination / ("AdPlayer" + suffix) for suffix in (".dll", ".runtimeconfig.json", ".deps.json")]
+    files += sorted((destination / "quiet-home").rglob("*")) + sorted(helper_dir.iterdir())
+    for path in files:
+        if path.is_symlink():
+            raise ValueError("Trial packages cannot contain symlinks.")
+    manifest = {"version": 1, "framework": framework, "assembly": "AdPlayer",
+                "files": {str(p.relative_to(destination)): hashlib.sha256(p.read_bytes()).hexdigest()
+                          for p in files if p.is_file()}}
+    (destination / "trial-build.json").write_text(json.dumps(manifest, indent=2) + "\n")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("target", choices=["payloads", "probe", "launcher", "all"])
+    parser.add_argument("target", choices=["payloads", "probe", "trial-helper", "launcher", "all"])
     parser.add_argument("--dotnet", default=os.environ.get("DOTNET", "dotnet"))
     parser.add_argument("--framework", type=Path, default=ROOT / ".local/tv-framework")
     parser.add_argument("--target-framework", choices=tuple(FRAMEWORKS.values()), default="net6.0",
@@ -46,6 +64,10 @@ def main():
                         help="Entry assembly for an explicitly inspected container; does not install it")
     args = parser.parse_args()
     output_root = build_root(ROOT, args.target_framework)
+    trial_build = args.target in ("launcher", "all") and args.home_assembly == "AdPlayer"
+    trial_destination = ROOT / (".local/package" + ("-" + args.target_framework if args.target_framework != "net6.0" else "") + "-AdPlayer")
+    if trial_build:
+        (trial_destination / "trial-build.json").unlink(missing_ok=True)
     jobs = []
     if args.target in ("payloads", "all"):
         # A failed rebuild must not leave a manifest blessing partially replaced binaries.
@@ -65,6 +87,8 @@ def main():
     if args.target in ("probe", "launcher", "all"):
         (output_root / "Probe/build-manifest.json").unlink(missing_ok=True)
         jobs.append((ROOT / "launcher/probe/Probe.csproj", "Probe", "Probe", []))
+    if args.target == "trial-helper" or trial_build:
+        jobs.append((ROOT / "launcher/trial/TrialLaunch.csproj", "TrialLaunch", "TrialLaunch", []))
     for project, output, intermediate, extra in jobs:
         subprocess.run([
             args.dotnet, "build", str(project), "-c", "Release", "--nologo",
@@ -85,6 +109,8 @@ def main():
         if args.home_assembly != "BixbyPromotion":
             destination = destination.with_name(destination.name + "-" + args.home_assembly)
         package_launcher(output_root, ROOT / "launcher/assets", destination, args.home_assembly)
+        if trial_build:
+            write_trial_manifest(destination, args.target_framework, output_root / "TrialLaunch")
         print(f"Deployable files: {destination.relative_to(ROOT)}. Review the catalog and input mapping before use.")
 
 
