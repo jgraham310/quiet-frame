@@ -1,8 +1,17 @@
 # Developer Mode and temporary root
 
+For The Frame, use [the Frame inventory workflow](10-frame.md) first. The
+commands below explicitly select the original U8000F profile. They do not
+establish Frame compatibility. `identify` only reads SDB identity; `doctor`
+inspects archive-route prerequisites. Neither proves that root, installation
+or private launcher APIs work on another TV.
+
 ## Prepare the computer
 
-Use Python 3.12+, OpenSSL, Samsung's SDB and the .NET 6 SDK. Install SDB through
+Use Python 3.12+, OpenSSL, Samsung's SDB and a .NET SDK (6 or newer; CI checks
+6 and 10.0.302). The SDK on the computer is independent of the TV's CLR target.
+`global.json` falls forward to an installed newer major SDK when 6 is absent.
+Install SDB through
 [Tizen Studio](https://developer.tizen.org/development/tizen-studio/download).
 The repository intentionally does not redistribute Samsung's executable.
 Set `SDB` to the absolute path of your installation. The commands below use a
@@ -13,7 +22,7 @@ export SDB=/absolute/path/to/tizen-studio/tools/sdb
 export TV_IP=192.0.2.50
 # Replace the example IP above. Read this string on YOUR TV; do not guess it.
 export TV_FIRMWARE='T-KSU2EFAKUC-0090-1300.9'
-tv() { python3 tools/tv.py --host "$TV_IP" --firmware "$TV_FIRMWARE" "$@"; }
+tv() { python3 tools/tv.py --host "$TV_IP" --firmware "$TV_FIRMWARE" --profile profiles/un75u8000ffxza-1300.9.json "$@"; }
 python3 tools/build.py payloads
 ```
 
@@ -42,6 +51,11 @@ tv root-check
 
 `doctor` checks the SDB foothold, runtime, file capabilities and tar support.
 It does not obtain root or establish compatibility for every private API.
+It also prints the matching build framework. The example above builds .NET 6
+payloads for the original device. If another device's preflight reports 3.1,
+build separately with `python3 tools/build.py payloads --target-framework netcoreapp3.1`.
+The wrapper requires a matching build manifest and checksums before root access;
+old unrecorded payload folders must be rebuilt.
 `root-check` builds on that route, executes `id`, and requires an authenticated
 UID/EUID 0 callback plus successful staging/system-file cleanup.
 

@@ -2,24 +2,150 @@ import base64
 import gzip
 import hashlib
 from pathlib import Path
+import shlex
+import sqlite3
+import subprocess
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-from tv import check_identity, decode_pull, private_path, PROFILE
+from tv import (check_identity, decode_pull, private_path, PROFILE,
+                inventory_command, home_preferences_command, platform_command, containers_command,
+                launch_context_command)
+from device_profiles import load_profile
 
 
 class AccessTests(unittest.TestCase):
     def test_target_identity_gate(self):
-        check_identity(PROFILE["model"], PROFILE["firmware"])
+        legacy = load_profile(ROOT / "profiles/un75u8000ffxza-1300.9.json")
+        check_identity(legacy["model"], legacy["firmware"], legacy, mutation=True)
         with self.assertRaises(ValueError):
-            check_identity("ANOTHER_MODEL", PROFILE["firmware"])
+            check_identity("ANOTHER_MODEL", legacy["firmware"], legacy)
         with self.assertRaises(ValueError):
-            check_identity(PROFILE["model"], "ANOTHER_FIRMWARE")
+            check_identity(legacy["model"], "ANOTHER_FIRMWARE", legacy)
         with self.assertRaises(ValueError):
-            check_identity(PROFILE["model"], None)
+            check_identity(legacy["model"], None, legacy)
+
+    def test_default_frame_template_never_permits_root_or_mutation(self):
+        self.assertEqual(PROFILE["family"], "frame")
+        for mutation in (False, True):
+            with self.assertRaisesRegex(ValueError, "inventory template"):
+                check_identity(None, None, mutation=mutation)
+
+    def test_frame_inventory_profile_does_not_authorize_deployment(self):
+        profile = {**PROFILE, "model": "SYNTHETIC_FRAME", "firmware": "SYNTHETIC_FIRMWARE"}
+        check_identity(profile["model"], profile["firmware"], profile)
+        with self.assertRaisesRegex(ValueError, "inventory only"):
+            check_identity(profile["model"], profile["firmware"], profile, mutation=True)
+        with self.assertRaises(ValueError):
+            check_identity("OTHER_FRAME", profile["firmware"], profile)
+        with self.assertRaises(ValueError):
+            check_identity(profile["model"], "OTHER_FIRMWARE", profile)
+
+    def test_inventory_reads_registry_and_never_writes_preferences(self):
+        for command in (inventory_command(), platform_command()):
+            self.assertIn("sqlite3 -readonly", command)
+            self.assertNotIn("vconftool set", command)
+            self.assertNotIn("app_launcher", command)
+            self.assertNotIn("systemctl", command)
+            subprocess.run(["sh", "-n"], input=command, text=True, check=True)
+
+    def run_preferences(self, startup, home="printf '%s\\n' 'home-value'"):
+        stub = """set -eu
+vconftool() {
+    case "$2" in
+        db/appfw/home_appid) %s ;;
+        db/appfw/startup_appid) %s ;;
+        *) return 99 ;;
+    esac
+}
+""" % (home, startup)
+        return subprocess.run(["sh"], input=stub + home_preferences_command(),
+                              text=True, capture_output=True)
+
+    def test_inventory_accepts_only_specific_absent_startup_diagnostic(self):
+        diagnostic = "Error: Get: Layer 'system' Key 'db/appfw/startup_appid': No such file or directory"
+        for stream in ("", " >&2"):
+            result = self.run_preferences("printf '%s\\n' " + shlex.quote(diagnostic)
+                                          + stream + "; return 1")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("home-value", result.stdout)
+            self.assertIn("db/appfw/startup_appid: absent (not created)", result.stdout)
+
+    def test_inventory_preserves_existing_startup_value(self):
+        result = self.run_preferences("printf '%s\\n' 'startup-value'")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("startup-value", result.stdout)
+        self.assertNotIn("absent", result.stdout)
+
+    def test_inventory_does_not_hide_other_preference_errors(self):
+        result = self.run_preferences("echo 'Permission denied' >&2; return 7")
+        self.assertEqual(result.returncode, 7)
+        self.assertIn("Permission denied", result.stderr)
+        result = self.run_preferences("echo 'startup-value'", home="return 3")
+        self.assertEqual(result.returncode, 3)
+
+    def test_platform_queries_discover_managed_apps_without_upstream_containers(self):
+        with sqlite3.connect(":memory:") as db:
+            db.executescript("""
+                CREATE TABLE package_app_info (
+                    app_id TEXT, app_type TEXT, app_component TEXT, app_exec TEXT,
+                    app_root_path TEXT, package TEXT, app_api_version TEXT,
+                    app_disable TEXT, app_onboot TEXT, app_autorestart TEXT);
+                CREATE TABLE key_filter (appid TEXT, key TEXT, longpress TEXT,
+                    override TEXT, on_selector TEXT, request TEXT,
+                    target_selector TEXT, args TEXT);
+                INSERT INTO package_app_info VALUES
+                    ('synthetic.managed', 'dotnet', 'uiapp', 'Managed.dll',
+                     '/synthetic', 'synthetic', '6.0', 'false', 'false', 'false'),
+                    ('org.tizen.art-app', 'capp', 'uiapp', '/synthetic/art',
+                     '/synthetic', 'art', '6.0', 'false', 'false', 'false'),
+                    ('synthetic.other', 'webapp', 'uiapp', 'index.html',
+                     '/synthetic', 'other', '6.0', 'false', 'false', 'false');
+                INSERT INTO key_filter VALUES ('synthetic.shell', 'XF86Home',
+                    NULL, NULL, NULL, 'launch', 'synthetic.managed', NULL);
+            """)
+            changes = db.total_changes
+            queries = [shlex.split(line)[-1] for line in platform_command().splitlines()
+                       if line.startswith("sqlite3 ")]
+            results = [db.execute(query).fetchall() for query in queries]
+            self.assertEqual(len(results), 3)
+            self.assertEqual({row[0] for row in results[1]},
+                             {"synthetic.managed", "org.tizen.art-app"})
+            self.assertEqual(results[2][0][1], "XF86Home")
+            self.assertEqual(db.total_changes, changes)
+
+    def test_container_inspection_reads_metadata_without_modifying_packages(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            package = base / "writable/com.samsung.tv.adplayer"
+            (package / "bin").mkdir(parents=True)
+            (package / "info").mkdir()
+            manifest = package / "info/tizen-manifest.xml"
+            manifest.write_text('<manifest package="synthetic.readonly"/>')
+            runtime = package / "bin/AdPlayer.runtimeconfig.json"
+            runtime.write_text('{"runtimeOptions":{"tfm":"synthetic"}}')
+            expected = {str(p): p.read_bytes() for p in package.rglob("*") if p.is_file()}
+            command = containers_command().replace("/opt/usr/apps", str(base / "writable"))
+            command = command.replace("/usr/apps", str(base / "system"))
+            # No host registry is opened; actual filesystem readers inspect only
+            # the private fixture and the remaining fixed directories are absent.
+            prefix = "sqlite3() { printf '%s\\n' 'synthetic schema'; }\n"
+            result = subprocess.run(["sh"], input=prefix + command, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('synthetic.readonly', result.stdout)
+            self.assertIn('runtimeOptions', result.stdout)
+            self.assertIn('Directory absent', result.stdout)
+            self.assertEqual(expected, {str(p): p.read_bytes() for p in package.rglob("*") if p.is_file()})
+            detail = containers_command(True).replace("/opt/usr/apps", str(base / "writable"))
+            result = subprocess.run(["sh"], input=prefix + detail, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(hashlib.sha256(runtime.read_bytes()).hexdigest(), result.stdout)
+            self.assertIn('Entry assembly and runtime configuration', result.stdout)
+            self.assertEqual(expected, {str(p): p.read_bytes() for p in package.rglob("*") if p.is_file()})
 
     def test_transfer_integrity(self):
         payload = b"synthetic contents only" * 100
@@ -30,6 +156,60 @@ class AccessTests(unittest.TestCase):
             decode_pull("0" * 64 + "\n" + body)
         with self.assertRaises(Exception):
             decode_pull(digest + "\n" + body[:-12])
+
+    def test_launch_context_reads_exact_native_process_arguments_without_secrets_or_mutation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            processes = base / "proc"
+            records = (
+                (101, ["/usr/bin/dotnet", "/usr/apps/com.samsung.tv.csfs/bin/csfs.dll", "private-token"], 1234),
+                (102, ["com.samsung.tv.adplayer", "private-adplayer-token"], 1234),
+                (103, ["sh", "-c", launch_context_command()], 0),
+                (104, ["unrelated-app", "prefix-com.samsung.tv.csfs-suffix", "unrelated-secret"], 4321),
+                (105, ["org.tizen.art-app", "private-art-token"], 1234),
+            )
+            before = {}
+            for pid, arguments, uid in records:
+                process = processes / str(pid)
+                (process / "attr").mkdir(parents=True)
+                (process / "cmdline").write_bytes(b"\0".join(arg.encode() for arg in arguments) + b"\0")
+                (process / "status").write_text(f"Name:\tsynthetic\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\nGid:\t{uid}\t{uid}\t{uid}\t{uid}\n")
+                (process / "attr/current").write_text("synthetic-label\n")
+                (process / "environ").write_bytes(b"ACCOUNT_TOKEN=environment-secret\0")
+                for path in process.rglob("*"):
+                    if path.is_file():
+                        before[path] = path.read_bytes()
+            # Real tr/grep/awk read synthetic proc files. Any mutating launcher
+            # call would fail; SQLite accepts only the fixed read-only query.
+            prefix = """app_launcher() { return 99; }
+sqlite3() {
+    test "$1" = -readonly || return 98
+    printf 'synthetic-registry-row\n'
+}
+"""
+            command = launch_context_command().replace("/proc/[0-9]*", str(processes) + "/[0-9]*")
+            subprocess.run(["sh", "-n"], input=command, text=True, check=True)
+            result = subprocess.run(["sh"], input=prefix + command, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for pid in (101, 102, 105):
+                self.assertIn(f"PID={pid}\n", result.stdout)
+            for pid in (103, 104):
+                self.assertNotIn(f"PID={pid}\n", result.stdout)
+            for secret in ("private-token", "private-adplayer-token", "private-art-token", "unrelated-secret", "environment-secret"):
+                self.assertNotIn(secret, result.stdout + result.stderr)
+            self.assertIn("Matched processes: 3", result.stdout)
+            self.assertIn("Uid:\t1234", result.stdout)
+            self.assertEqual(before, {path: path.read_bytes() for path in before})
+
+    def test_launch_context_reports_no_known_running_ui_without_guessing_a_uid(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            command = launch_context_command().replace("/proc/[0-9]*", temporary + "/[0-9]*")
+            result = subprocess.run(["sh"], input="sqlite3() { :; }\n" + command,
+                                    text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Matched processes: 0", result.stdout)
+            self.assertNotIn("UID=5001", result.stdout)
+            self.assertNotIn("PID=", result.stdout)
 
     def test_private_outputs_cannot_escape_checkout_private_directory(self):
         with self.assertRaises(ValueError):

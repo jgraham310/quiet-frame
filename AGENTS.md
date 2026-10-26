@@ -1,5 +1,22 @@
 # Instructions for an agent working in this repository
 
+## Frame fork
+
+Read docs/10-frame.md first. This fork targets The Frame, but Frame launcher
+deployment is not yet verified. The owner has reported a successful build
+against copied Frame references. The upstream U8000F observations are historical
+evidence, not Frame test results. Default preservation also includes Art Mode,
+Art Store, motion/light sensors, native power behavior and SmartThings.
+Do not import the U8000F smart-extras/context/light-shell groups into a Frame
+profile. Profile exclusions are conservative name checks, not a complete
+dependency graph. Populate exact dependencies from the owner's device.
+
+Keep actual device identities in ignored .local/ profiles and input/app
+customization in launcher/assets/tv.local.json. Never populate the public
+template with a guessed model, firmware, source mapping or Art Mode app ID.
+No model-specific installation or successful Frame validation may be claimed
+without matching references, inventory and an actual TV check.
+
 ## Start with the owner's device and goals
 
 Read README.md and docs/01-inventory.md through docs/04-launcher.md, plus

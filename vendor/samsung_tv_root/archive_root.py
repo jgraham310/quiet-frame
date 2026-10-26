@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import io
 import ipaddress
 import json
@@ -13,6 +15,7 @@ import tarfile
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import Callable
 
 from .resources import payload_directory
 from .root_agent import RootAgentServer, generate_secret, write_secret
@@ -203,7 +206,8 @@ def _prepare_artifacts(
     )
 
 
-def _stage(client: SdbClient, directory: Path, payloads: Path, package: str) -> None:
+def _stage(client: SdbClient, directory: Path, payloads: Path, package: str,
+           diagnostic_probe: Path | None = None, session_files: tuple[Path, ...] = ()) -> None:
     staging = STAGING_ROOT / package
     _capture(client, f"/bin/mkdir -p {staging}")
     _capture(client, f"/bin/mkdir -p {ON_DEMAND}")
@@ -214,6 +218,19 @@ def _stage(client: SdbClient, directory: Path, payloads: Path, package: str) -> 
         client.push(source, staging / name)
     for name in RUNTIME_CONFIG_FILES:
         client.push(directory / name, staging / name)
+    if diagnostic_probe is not None:
+        for name in ("Probe.dll", "Probe.runtimeconfig.json"):
+            source = diagnostic_probe / name
+            digest = hashlib.sha256(source.read_bytes()).hexdigest()
+            client.push(source, staging / name)
+            actual = _capture(client, f"sha256sum {staging / name}").split()[0]
+            if digest != actual:
+                raise ArchiveRootError("Staged diagnostic probe digest mismatch.")
+    for source in session_files:
+        digest = hashlib.sha256(source.read_bytes()).hexdigest()
+        client.push(source, staging / source.name)
+        if _capture(client, f"sha256sum {staging / source.name}").split()[0] != digest:
+            raise ArchiveRootError("Staged session file digest mismatch.")
     for name in ("public.pem", "passwd", "root-agent.token"):
         client.push(directory / name, staging / name)
     archive_name = f"{package}.tar.gz"
@@ -248,6 +265,11 @@ async def probe(
     command_timeout: float = 45.0,
     commands: tuple[str, ...] = (),
     payloads: Path | None = None,
+    expected_runtime: str | None = None,
+    diagnostic_probe: Path | None = None,
+    command_factory: Callable[[PurePosixPath], tuple[str, ...]] | None = None,
+    collect_files: tuple[str, ...] = (),
+    session_files: tuple[Path, ...] = (),
 ) -> dict[str, object]:
     ipaddress.IPv4Address(tv_host)
     callback = callback_host or route_callback_host(tv_host)
@@ -256,6 +278,27 @@ async def probe(
     ipaddress.IPv4Address(bind)
     client = SdbClient(find_sdb(), tv_host, timeout=sdb_timeout)
     assessment = await asyncio.to_thread(_check_target, client)
+    if expected_runtime is not None and assessment.runtime != expected_runtime:
+        raise ArchiveRootError("TV runtime changed since payload selection; stop and repeat preflight.")
+    if command_factory is not None and (commands or diagnostic_probe is not None):
+        raise ArchiveRootError("Session command factory cannot be combined with other command modes.")
+    if any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,100}", name) for name in collect_files):
+        raise ArchiveRootError("Collect only simple filenames inside the owned session directory.")
+    reserved = {*PAYLOAD_FILES, *RUNTIME_CONFIG_FILES, 'Probe.dll', 'Probe.runtimeconfig.json',
+                'public.pem', 'passwd', 'root-agent.token', 'launcher.log'}
+    session_files = tuple(Path(path) for path in session_files)
+    if (len(session_files) > 4 or len({path.name for path in session_files}) != len(session_files)
+            or any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,100}", path.name)
+                   or path.name in reserved or not path.is_file() or path.is_symlink()
+                   or path.stat().st_size > 4194304 for path in session_files)):
+        raise ArchiveRootError("Stage only bounded, distinct session files with non-reserved simple filenames.")
+    if diagnostic_probe is not None:
+        if commands:
+            raise ArchiveRootError("Diagnostic probe accepts no custom commands or arguments.")
+        diagnostic_probe = Path(diagnostic_probe)
+        for name in ("Probe.dll", "Probe.runtimeconfig.json"):
+            if not (diagnostic_probe / name).is_file():
+                raise ArchiveRootError(f"Missing diagnostic probe file: {name}")
     payloads = payloads or payload_directory(
         "common31" if assessment.runtime == "3.1" else "common"
     )
@@ -263,6 +306,12 @@ async def probe(
         if not (payloads / name).is_file():
             raise ArchiveRootError(f"missing payload {payloads / name}")
     package = "archive-root-" + secrets.token_hex(8)
+    if command_factory is not None:
+        commands = command_factory(STAGING_ROOT / package)
+    if diagnostic_probe is not None:
+        # No arguments: the existing Probe's mutating set-home branch is never
+        # selected. Stage and remove its files with the owned root session.
+        commands = (f"/usr/bin/dotnet {STAGING_ROOT / package}/Probe.dll",)
     staging_started = False
     launch_task: asyncio.Task[CaptureResult] | None = None
     server = RootAgentServer(bind, 0, tv_host, generate_secret(), require_root=True)
@@ -279,7 +328,7 @@ async def probe(
                 server.secret,
             )
             staging_started = True
-            await asyncio.to_thread(_stage, client, directory, payloads, package)
+            await asyncio.to_thread(_stage, client, directory, payloads, package, diagnostic_probe, session_files)
             command = (
                 f"/usr/bin/dotnet {STAGING_ROOT / package}/SamsungTvArchiveRoot.dll "
                 f"{package}"
@@ -340,6 +389,17 @@ async def probe(
                                 "stderr": result.stderr,
                             }
                         )
+                if collect_files and commands and all(
+                    item["exit_code"] == 0 and not item["timed_out"]
+                    for item in evidence["commands"]
+                ):
+                    evidence["collected_files"] = {}
+                    for name in collect_files:
+                        artifact = await connection.read_file(STAGING_ROOT / package / name)
+                        evidence["collected_files"][name] = {
+                            "sha256": artifact.sha256,
+                            "base64": base64.b64encode(artifact.data).decode("ascii"),
+                        }
             finally:
                 await connection.shutdown()
             if launch_task is not None:

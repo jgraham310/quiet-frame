@@ -7,6 +7,21 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - sdk: "6.0.x"
+            sdk_major: "6"
+          - sdk: "10.0.302"
+            sdk_major: "10"
+    env:
+      DOTNET_INSTALL_DIR: ${{ github.workspace }}/.local/ci-dotnet
+      DOTNET_MULTILEVEL_LOOKUP: "0"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      # Offline test executables target net6.0; allow them to run on the
+      # installed host runtime. This does not change the TV payload target.
+      DOTNET_ROLL_FORWARD: Major
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -14,10 +29,51 @@ jobs:
           python-version: "3.12"
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "6.0.x"
+          dotnet-version: ${{ matrix.sdk }}
+      - name: Verify selected SDK
+        run: |
+          dotnet --info
+          selected_sdk="$(dotnet --version)"
+          test "${selected_sdk%%.*}" = "${{ matrix.sdk_major }}"
       - name: Python tests and recipe syntax
         run: python3 -m unittest discover -s tests -v
       - name: Build open-source access payloads
-        run: python3 tools/build.py payloads
+        run: |
+          python3 tools/build.py payloads
+          python3 tools/build.py probe
+          python3 tools/build.py trial-helper
+      - name: Build access payloads against .NET Core 3.1 references
+        run: |
+          python3 tools/build.py payloads --target-framework netcoreapp3.1
+          python3 tools/build.py probe --target-framework netcoreapp3.1
+          python3 tools/build.py trial-helper --target-framework netcoreapp3.1
+      - name: Test root agent shell argument transport
+        run: |
+          python3 - <<'PY'
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, 'tools')
+          from tv import platform_command
+          fixture = Path('.local/test-fixtures/platform.sh')
+          fixture.parent.mkdir(parents=True, exist_ok=True)
+          fixture.write_text(platform_command())
+          PY
+          dotnet run --project tests/AgentCommandTests.csproj -- .local/test-fixtures/platform.sh
+          dotnet build tests/AgentCommandTests.csproj -p:TV_TARGET_FRAMEWORK=netcoreapp3.1
       - name: Test native catalog logic without Samsung references
         run: dotnet run --project tests/CatalogTests.csproj -- launcher/assets/apps.json
+      - name: Test trial launch errors and handle cleanup without native APIs
+        run: |
+          dotnet run --project tests/TrialLaunchTests.csproj
+          dotnet build tests/TrialLaunchTests.csproj -p:TV_TARGET_FRAMEWORK=netcoreapp3.1
+      - name: Test Frame configuration without Samsung references
+        run: dotnet run --project tests/LauncherConfigTests.csproj -- launcher/assets/tv.json
+      - name: Test NUI compatibility with synthetic API shapes
+        run: |
+          dotnet run --project tests/NuiCompatTests.csproj
+          dotnet run --project tests/NuiCompatTests.csproj -p:NUI_TEST_SHAPE=Vector
+      - name: Compile shared launcher logic against .NET Core 3.1 references
+        run: |
+          dotnet build tests/CatalogTests.csproj -p:TV_TARGET_FRAMEWORK=netcoreapp3.1
+          dotnet build tests/LauncherConfigTests.csproj -p:TV_TARGET_FRAMEWORK=netcoreapp3.1
+          dotnet build tests/NuiCompatTests.csproj -p:TV_TARGET_FRAMEWORK=netcoreapp3.1

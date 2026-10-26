@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFramework Condition="'$(TV_TARGET_FRAMEWORK)' == ''">net6.0</TargetFramework><TargetFramework Condition="'$(TV_TARGET_FRAMEWORK)' != ''">$(TV_TARGET_FRAMEWORK)</TargetFramework>
     <OutputType>Exe</OutputType>
     <AssemblyName>SamsungTvRootAgent</AssemblyName>
     <UseAppHost>false</UseAppHost>

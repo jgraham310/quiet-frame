@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+ <PropertyGroup>
+  <OutputType>Exe</OutputType><TargetFramework Condition="'$(TV_TARGET_FRAMEWORK)' == ''">net6.0</TargetFramework><TargetFramework Condition="'$(TV_TARGET_FRAMEWORK)' != ''">$(TV_TARGET_FRAMEWORK)</TargetFramework>
+  <UseAppHost>false</UseAppHost><EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+ </PropertyGroup>
+ <ItemGroup>
+  <Compile Include="../launcher/src/LauncherConfig.cs" />
+    <Compile Include="../launcher/src/LaunchPolicy.cs" />
+  <Compile Include="LauncherConfigTests.cs" />
+ </ItemGroup>
+</Project>

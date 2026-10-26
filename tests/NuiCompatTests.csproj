@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework Condition="'$(TV_TARGET_FRAMEWORK)' == ''">net6.0</TargetFramework>
+    <TargetFramework Condition="'$(TV_TARGET_FRAMEWORK)' != ''">$(TV_TARGET_FRAMEWORK)</TargetFramework>
+    <UseAppHost>false</UseAppHost>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants Condition="'$(NUI_TEST_SHAPE)' == 'Vector'">$(DefineConstants);VECTOR_NUI</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../launcher/src/NuiCompat.cs" />
+    <Compile Include="NuiCompatTests.cs" />
+  </ItemGroup>
+</Project>

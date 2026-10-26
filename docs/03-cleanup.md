@@ -1,5 +1,10 @@
 # Reversible cleanup
 
+**The Frame:** this page records the U8000F case study. Do not run its groups
+against a Frame. Start with [the Frame guide](10-frame.md), an exact private
+profile and individually reviewed dependencies. The planner defaults to the
+non-deployable Frame template; selecting the original profile is explicit.
+
 Prefer disabling specific components over deleting system packages. A package
 can contain several app IDs; disabling an app record is not the same as
 uninstalling its package. The tested workaround changes three registry fields:
@@ -42,6 +47,7 @@ restoration does not accidentally erase an earlier desired change.
 tv exec --script recipes/snapshot.sh --arg advertising-01
 tv pull /opt/usr/share/quiet-tizen-backups/advertising-01/.pkgmgr_parser.db .local/advertising-01-registry.db
 python3 tools/plan_cleanup.py \
+  --profile profiles/un75u8000ffxza-1300.9.json \
   --snapshot .local/advertising-01-registry.db \
   --groups advertising \
   --output .local/plans/advertising-01

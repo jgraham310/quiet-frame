@@ -1,0 +1,16 @@
+{
+  "profile_version": 2,
+  "family": "frame",
+  "model": null,
+  "firmware": null,
+  "allow_mutation": false,
+  "registry": "/opt/dbspace/.pkgmgr_parser.db",
+  "groups": {},
+  "protected_app_ids": [],
+  "notes": [
+    "Inventory template, not a tested Frame model or firmware profile.",
+    "Preserve Art Mode, Art Store, sensors, SmartThings, power behavior and native Home/settings.",
+    "Record actual dependencies in protected_app_ids before selecting cleanup targets.",
+    "Do not copy the U8000F cleanup groups or installation assumptions."
+  ]
+}

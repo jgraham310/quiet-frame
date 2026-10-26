@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Explicit-target access for the documented U8000F profile. See docs/02-access.md."""
+"""Explicit-target, profile-gated Samsung TV access. Start with docs/10-frame.md."""
 import argparse
 import asyncio
 import base64
@@ -13,13 +13,18 @@ import re
 import shlex
 import sys
 from datetime import datetime, timezone
+from device_profiles import DEFAULT_PROFILE, load_profile, check_identity as profile_identity
+from runtime_payloads import FRAMEWORKS, verified_payloads, verified_probe
+from adplayer_backup import (ARCHIVE as BACKUP_ARCHIVE, backup_directory,
+                             backup_command, observed_hashes)
+from adplayer_trial import make_plan, load_plan, trial_command
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "vendor"))
 from samsung_tv_root.archive_root import probe, _check_target, _capture
 from samsung_tv_root.sdb import SdbClient, find_sdb
 
-PROFILE = json.loads((ROOT / "profiles/un75u8000ffxza-1300.9.json").read_text())
+PROFILE = load_profile()
 STAGE = "/home/owner/share/tmp/sdk_tools/quiet-tizen"
 
 
@@ -48,12 +53,63 @@ def observed_model(client):
     return rows[0][-1]
 
 
-def check_identity(model, firmware):
-    if model != PROFILE["model"]:
-        raise ValueError(f"Unsupported model {model!r}; stop and investigate a separate profile.")
-    if firmware != PROFILE["firmware"]:
-        raise ValueError("Supply --firmware with the exact version read from About This TV. "
-                         "Only the documented build is accepted. Do not guess this value.")
+def check_identity(model, firmware, profile=None, *, mutation=False):
+    profile_identity(model, firmware, PROFILE if profile is None else profile, mutation=mutation)
+
+
+def home_preferences_command():
+    # A missing startup key is an observation, never permission to create it.
+    # Only accept vconftool's specific missing-key diagnostic; other errors fail.
+    return """read_optional_vconf() {
+    if output=$(vconftool get "$1" 2>&1); then
+        printf '%s\\n' "$output"
+    else
+        status=$?
+        case "$output" in
+            *"Key '$1': No such file or directory"*)
+                printf '%s: absent (not created)\\n' "$1" ;;
+            *) printf '%s\\n' "$output" >&2; return "$status" ;;
+        esac
+    fi
+}
+vconftool get db/appfw/home_appid
+read_optional_vconf db/appfw/startup_appid
+"""
+
+
+def inventory_command():
+    # No source switching, preference writes, unit stops or package modifications.
+    # Missing private schemas remain explicit failures, not compatibility evidence.
+    return """set -eu
+uname -srmo
+readlink -f /usr/share/dotnet.tizen/netcoreapp
+sqlite3 -readonly /opt/dbspace/.pkgmgr_parser.db '.schema package_app_info'
+sqlite3 -readonly -header -csv /opt/dbspace/.pkgmgr_parser.db 'SELECT app_id,app_disable,app_onboot,app_autorestart FROM package_app_info ORDER BY app_id;'
+sqlite3 -readonly /opt/dbspace/.app-context.db '.schema key_filter'
+""" + home_preferences_command()
+
+
+def platform_command():
+    # Fixed read-only queries: discover candidates, never select a replacement
+    # container or launch an Art Mode app based on its name alone.
+    return """set -eu
+printf '\\n=== Application types ===\\n'
+sqlite3 -readonly -header -csv /opt/dbspace/.pkgmgr_parser.db 'SELECT app_type,COUNT(*) AS count FROM package_app_info GROUP BY app_type ORDER BY app_type;'
+printf '\\n=== Managed and launcher-related application metadata ===\\n'
+sqlite3 -readonly -header -csv /opt/dbspace/.pkgmgr_parser.db "SELECT app_id,app_type,app_component,app_exec,app_root_path,package,app_api_version,app_disable,app_onboot,app_autorestart FROM package_app_info WHERE lower(app_type) LIKE '%dotnet%' OR lower(app_exec) LIKE '%.dll%' OR lower(app_id) LIKE '%promotion%' OR lower(app_id) LIKE '%quicklaunch%' OR app_id IN ('com.samsung.tv.bixby-promotion','com.samsung.tv.bixby-prov','com.samsung.tv.coba.home','com.samsung.tv.coba.art','org.tizen.art-app','org.tizen.tv-viewer','org.tizen.menu','org.tizen.app-selector') ORDER BY app_id;"
+printf '\\n=== Home and Art application key filters ===\\n'
+sqlite3 -readonly -header -csv /opt/dbspace/.app-context.db "SELECT appid,key,longpress,override,on_selector,request,target_selector,args FROM key_filter WHERE lower(key) LIKE '%home%' OR appid IN ('com.samsung.tv.coba.home','org.tizen.tv-viewer','org.tizen.art-app') ORDER BY appid,key;"
+printf '\\n=== Home preferences ===\\n'
+""" + home_preferences_command() + """
+printf '\\n=== Framework assembly paths ===\\n'
+find -L /usr/share/dotnet.tizen -maxdepth 6 -type f \\( -name Tizen.NUI.dll -o -name Tizen.Applications.Common.dll -o -name Tizen.System.dll -o -name Tizen.dll \\) -print
+printf '\\n=== Native API library paths ===\\n'
+for library in /usr/lib/libcapi-appfw-app-operation-tv.so* /usr/lib/libsource-api.so* /usr/lib/libcapi-media-sound-manager-tv.so*; do
+    if [ -e "$library" ]; then
+        readlink -f "$library"
+    fi
+done
+"""
 
 
 def pull_command(remote):
@@ -73,6 +129,110 @@ base64 "$t"
 """
 
 
+def containers_command(adplayer_details=False):
+    # Inspect vendor package metadata only. Names here are comparison samples,
+    # not approved replacement containers or cleanup targets.
+    if adplayer_details:
+        return """set -eu
+A=/opt/usr/apps/com.samsung.tv.adplayer
+printf '\\n=== AdPlayer registry record ===\\n'
+sqlite3 -readonly -header -csv /opt/dbspace/.pkgmgr_parser.db "SELECT app_id,app_type,app_exec,app_root_path,package,app_disable,app_onboot,app_autorestart,app_preload FROM package_app_info WHERE app_id='com.samsung.tv.adplayer';"
+printf '\\n=== Per-user application schema and records ===\\n'
+sqlite3 -readonly /opt/dbspace/.pkgmgr_parser.db '.schema package_app_info_for_uid'
+sqlite3 -readonly -header -csv /opt/dbspace/.pkgmgr_parser.db 'SELECT * FROM package_app_info_for_uid;'
+printf '\\n=== AdPlayer files and cached native images ===\\n'
+test -d "$A/bin"
+ls -laZ "$A/bin"
+find "$A/bin" -maxdepth 3 -type f -exec stat -c 'owner=%u group=%g mode=%a bytes=%s path=%n' {} \\;
+printf '\\n=== Entry assembly and runtime configuration ===\\n'
+for file in "$A/bin/AdPlayer.dll" "$A/bin/AdPlayer.runtimeconfig.json"; do
+    if [ -f "$file" ]; then
+        readlink -f "$file"
+        ls -ldZ "$file"
+        sha256sum "$file"
+    else
+        printf 'File absent: %s\\n' "$file"
+    fi
+done
+printf '\\n=== Package dependency schema and explicit references ===\\n'
+sqlite3 -readonly /opt/dbspace/.pkgmgr_parser.db '.schema package_dependency_info'
+dependencies=$(sqlite3 -readonly /opt/dbspace/.pkgmgr_parser.db '.dump package_dependency_info')
+if printf '%s\\n' "$dependencies" | grep -F 'com.samsung.tv.adplayer'; then :; else printf 'No explicit AdPlayer dependency row found (not a complete dependency audit).\\n'; fi
+printf '\\n=== Launch utility help ===\\n'
+if help=$(app_launcher -h 2>&1); then printf '%s\\n' "$help"; else printf '%s\\n' "$help"; fi
+"""
+    return """set -eu
+printf '\\n=== Package registry tables ===\\n'
+sqlite3 -readonly /opt/dbspace/.pkgmgr_parser.db "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'package%' ORDER BY name;"
+printf '\\n=== Package metadata schema ===\\n'
+sqlite3 -readonly /opt/dbspace/.pkgmgr_parser.db '.schema package_info'
+printf '\\n=== Application-control metadata schema ===\\n'
+sqlite3 -readonly /opt/dbspace/.pkgmgr_parser.db "SELECT name,sql FROM sqlite_master WHERE type='table' AND (name LIKE '%appcontrol%' OR name LIKE '%privilege%' OR name LIKE '%permission%') ORDER BY name;"
+printf '\\n=== Existing managed package layouts ===\\n'
+for root in /opt/usr/apps/com.samsung.tv.adplayer /opt/usr/apps/com.samsung.tv.ContentsBrowser /opt/usr/apps/com.samsung.tv.quickpanel /usr/apps/com.samsung.tv.csfs /usr/apps/org.tizen.art-app; do
+    printf '\\nPackage directory: %s\\n' "$root"
+    if [ ! -d "$root" ]; then
+        printf 'Directory absent\\n'
+        continue
+    fi
+    stat -c 'owner=%u group=%g mode=%a path=%n' "$root" "$root/bin"
+    if labels=$(ls -ldZ "$root" "$root/bin" 2>&1); then
+        printf '%s\\n' "$labels"
+    else
+        printf 'Security-label listing unavailable: %s\\n' "$labels"
+    fi
+    find "$root" -maxdepth 2 -type f \\( -name '*.runtimeconfig.json' -o -name '*manifest*.xml' \\) -print -exec head -c 12000 {} \\;
+    printf '\\n'
+done
+printf '\\n=== Package and launch tool paths ===\\n'
+for tool in app_launcher pkgcmd pkgmgr-cli aul-launch vconftool chsmack; do
+    if command -v "$tool"; then :; else printf '%s: unavailable\\n' "$tool"; fi
+done
+"""
+
+
+def launch_context_command():
+    # Match complete argv entries, not substrings (including this shell's own
+    # command text). Never print other arguments or process environments.
+    return r"""set -eu
+printf '\n=== Running native UI / AdPlayer processes ===\n'
+found=0
+for process in /proc/[0-9]*; do
+    test -r "$process/cmdline" || continue
+    if arguments=$(tr '\000' '\n' < "$process/cmdline" 2>/dev/null); then :; else continue; fi
+    case "$arguments" in
+        *com.samsung.tv.csfs*|*com.samsung.tv.quickpanel*|*org.tizen.art-app*|*org.tizen.menu*|*org.tizen.tv-viewer*|*com.samsung.tv.adplayer*|*AdPlayer.dll*|*ArtApp.dll*|*csfs.dll*) ;;
+        *) continue;;
+    esac
+    if matched=$(printf '%s\n' "$arguments" | grep -F -x \
+        -e com.samsung.tv.csfs -e com.samsung.tv.quickpanel \
+        -e org.tizen.art-app -e org.tizen.menu -e org.tizen.tv-viewer \
+        -e com.samsung.tv.adplayer -e AdPlayer.dll -e ArtApp.dll -e csfs.dll \
+        -e /usr/apps/com.samsung.tv.csfs/bin/csfs.dll \
+        -e /opt/usr/apps/com.samsung.tv.csfs/bin/csfs.dll \
+        -e /usr/apps/org.tizen.art-app/bin/ArtApp.dll \
+        -e /opt/usr/apps/org.tizen.art-app/bin/ArtApp.dll \
+        -e /opt/usr/apps/com.samsung.tv.adplayer/bin/AdPlayer.dll \
+        -e /usr/apps/com.samsung.tv.quickpanel/bin/com.samsung.tv.quickpanel.dll \
+        -e /opt/usr/apps/com.samsung.tv.quickpanel/bin/com.samsung.tv.quickpanel.dll); then
+        if details=$(awk '/^(Name|Uid|Gid):/ {print}' "$process/status" 2>/dev/null); then
+            found=$((found + 1))
+            printf '\nPID=%s\nmatched_app_argument=%s\n%s\n' "${process##*/}" "$matched" "$details"
+            if label=$(cat "$process/attr/current" 2>/dev/null); then printf 'SMACK=%s\n' "$label"; fi
+        fi
+    fi
+done
+printf '\nMatched processes: %s\n' "$found"
+printf '\n=== Available user-context utilities (paths only) ===\n'
+for utility in su runuser setpriv; do
+    if command -v "$utility"; then :; else printf '%s: unavailable\n' "$utility"; fi
+done
+printf '\n=== AdPlayer registry flags ===\n'
+sqlite3 -readonly -header -csv /opt/dbspace/.pkgmgr_parser.db "SELECT app_id,app_disable,app_onboot,app_autorestart,app_preload FROM package_app_info WHERE app_id='com.samsung.tv.adplayer';"
+printf '\nRead only: no applications were launched/stopped and no package or routing values were changed.\n'
+"""
+
+
 def decode_pull(stdout):
     digest, encoded = stdout.split("\n", 1)
     if not re.fullmatch(r"[0-9a-f]{64}", digest):
@@ -89,10 +249,30 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", required=True, help="The owner's TV IPv4 address; never auto-discovered")
     parser.add_argument("--firmware", help="Operator-verified version from the TV's About screen")
+    parser.add_argument("--profile", type=Path, default=DEFAULT_PROFILE,
+                        help="Exact device profile; default is the non-deployable Frame template")
     parser.add_argument("--sdb", help="Path to Samsung's separately installed SDB")
     parser.add_argument("--callback-host", help="This computer's LAN IPv4 if route detection is wrong")
     sub = parser.add_subparsers(dest="action", required=True)
+    sub.add_parser("identify", help="Read only the explicitly selected SDB device identity")
     sub.add_parser("doctor", help="Read SDB identity and archive-route capabilities; does not obtain root")
+    sub.add_parser("inventory", help="Collect read-only runtime/registry information using temporary root")
+    sub.add_parser("platform", help="Read application entry points, Home routing and framework paths")
+    containers = sub.add_parser("containers", help="Read package schemas, owners/labels, manifests and runtime configurations")
+    containers.add_argument("--adplayer-details", action="store_true",
+                            help="Inspect entry/cache files, per-user records and launch utility help; no changes")
+    sub.add_parser("launch-context", help="Read selected running native UI process identities; does not launch or stop apps")
+    trial = sub.add_parser("adplayer-trial", help="Prepare, install, launch or restore one pinned private manual trial; no Home routing changes")
+    trial.add_argument("operation", choices=("prepare", "install", "launch", "restore"))
+    trial.add_argument("--name", default="trial-01", help="Unique immutable trial name")
+    trial.add_argument("--backup", default="adplayer-01", help="Existing verified recovery backup (prepare only)")
+    trial.add_argument("--package", type=Path, help="Built private AdPlayer package (prepare only)")
+    backup = sub.add_parser("backup-adplayer", help="Create private recovery copies and snapshots; does not install")
+    backup.add_argument("--name", default="adplayer-01", help="Unique backup name; existing originals are never overwritten")
+    backup_mode = backup.add_mutually_exclusive_group()
+    backup_mode.add_argument("--fetch-existing", action="store_true", help="Retrieve an already completed TV backup after a transfer failure")
+    backup_mode.add_argument("--resume-incomplete", action="store_true", help="Validate retained copies/snapshots and finish a backup that stopped before finalization")
+    sub.add_parser("sources", help="Run fixed read-only Probe queries for source IDs and native Home handler")
     sub.add_parser("root-check", help="Temporarily obtain root and run id; no configuration changes")
     run = sub.add_parser("exec", help="Execute one reviewed command or short script using temporary root")
     source = run.add_mutually_exclusive_group(required=True)
@@ -106,6 +286,7 @@ def main():
     push.add_argument("local", type=Path)
     push.add_argument("name", help="Simple staging filename")
     args = parser.parse_args()
+    profile = load_profile(args.profile)
     ipaddress.IPv4Address(args.host)
     if args.callback_host:
         ipaddress.IPv4Address(args.callback_host)
@@ -114,14 +295,49 @@ def main():
     client = SdbClient(find_sdb(), args.host, timeout=15)
     model = observed_model(client)
     print("SDB model:", model)
+    if args.action == "identify":
+        print("Read firmware from Settings > Support > About This TV; SDB identity is not compatibility proof.")
+        return
     if args.action == "doctor":
         assessment = _check_target(client)
         print("Archive-route runtime family:", assessment.runtime)
+        print("Required build framework:", FRAMEWORKS[assessment.runtime])
         print(assessment.capabilities)
         print(_capture(client, "uname -srmo; readlink -f /usr/share/dotnet.tizen/netcoreapp"))
         print("Preflight only. Firmware must be read on the TV; root is not yet confirmed.")
         return
-    check_identity(model, args.firmware)
+    check_identity(model, args.firmware, profile, mutation=args.action in ("exec", "push"))
+    command_factory = None
+    collect_files = ()
+    session_files = ()
+    assessment = None
+    if args.action == "adplayer-trial":
+        if profile["family"] != "frame":
+            raise ValueError("This dedicated trial requires an exact private Frame profile.")
+        assessment = _check_target(client)
+        if args.operation == "prepare":
+            framework = FRAMEWORKS[assessment.runtime]
+            package = args.package or ROOT / (".local/package" + ("-" + framework if framework != "net6.0" else "") + "-AdPlayer")
+            trial_directory, plan = make_plan(ROOT, args.name, args.backup, package, model, args.firmware, assessment.runtime)
+            session_files = (trial_directory / "trial.tar.gz",)
+        else:
+            if args.package:
+                raise ValueError("Only prepare accepts a package; later operations use the frozen trial.")
+            trial_directory, plan = load_plan(ROOT, args.name, model, args.firmware, assessment.runtime)
+        print(f"Pinned trial: {args.name}; launch UID/GID {plan['uid']}:{plan['gid']}; enabled catalog apps {plan['catalog_app_count']}")
+        print(f"Private plan and inverse: {trial_directory.relative_to(ROOT)}")
+        command_factory = lambda staging: (trial_command(trial_directory, args.operation, staging),)
+    if args.action == "backup-adplayer":
+        backup_directory(args.name)
+        backup_local = private_path(ROOT / ".local/backups" / args.name / "backup.tar.gz")
+        if backup_local.exists() and not args.fetch_existing:
+            raise ValueError("Local backup already exists; originals will not be overwritten.")
+        expected = observed_hashes(ROOT, model)
+        sdk_uid = _capture(client, "id -u")
+        command_factory = lambda staging: (backup_command(
+            args.name, staging, expected, sdk_uid, fetch_existing=args.fetch_existing,
+            resume_incomplete=args.resume_incomplete),)
+        collect_files = (BACKUP_ARCHIVE,)
     if args.action == "push":
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,100}", args.name):
             raise ValueError("Use a simple staging filename without directory components.")
@@ -138,6 +354,16 @@ def main():
         return
     if args.action == "root-check":
         command = "id"
+    elif args.action == "inventory":
+        command = inventory_command()
+    elif args.action == "platform":
+        command = platform_command()
+    elif args.action == "containers":
+        command = containers_command(args.adplayer_details)
+    elif args.action == "launch-context":
+        command = launch_context_command()
+    elif args.action in ("sources", "backup-adplayer", "adplayer-trial"):
+        command = None
     elif args.action == "pull":
         private_path(args.local)
         command = pull_command(args.remote)
@@ -151,9 +377,16 @@ def main():
         if args.arg:
             raise ValueError("--arg requires --script.")
         command = args.command
+    assessment = assessment or _check_target(client)
+    payloads = verified_payloads(ROOT, assessment.runtime)
+    diagnostic_probe = verified_probe(ROOT, assessment.runtime) if args.action == "sources" else None
     result = asyncio.run(probe(
         args.host, model=model, callback_host=args.callback_host,
-        payloads=ROOT / ".local/build/payloads", commands=(command,), command_timeout=30,
+        payloads=payloads, expected_runtime=assessment.runtime,
+        commands=() if diagnostic_probe is not None or command_factory is not None else (command,), command_timeout=30,
+        diagnostic_probe=diagnostic_probe,
+        command_factory=command_factory, collect_files=collect_files,
+        session_files=session_files,
     ))
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
     log = ROOT / ".local/sessions" / f"{stamp}.json"
@@ -165,13 +398,33 @@ def main():
     response = result["commands"][0]
     if response["stderr"]:
         print(response["stderr"], file=sys.stderr, end="")
+    if args.action in ("sources", "containers", "backup-adplayer", "launch-context", "adplayer-trial"):
+        print(response["stdout"], end="")
     if response["exit_code"] or response["timed_out"]:
         raise RuntimeError(f"Command failed ({response['exit_code']}, timeout={response['timed_out']}). "
                            f"Private log: {log.relative_to(ROOT)}")
-    if args.action == "pull":
+    if args.action == "backup-adplayer":
+        artifact = result.get("collected_files", {}).get(BACKUP_ARCHIVE)
+        if artifact is None:
+            raise ValueError("No verified backup archive was returned; keep the TV backup for inspection.")
+        data = base64.b64decode(artifact["base64"], validate=True)
+        if len(data) > 4194304 or hashlib.sha256(data).hexdigest() != artifact["sha256"]:
+            raise ValueError("Backup archive digest/size mismatch; no local copy saved.")
+        if backup_local.exists():
+            if hashlib.sha256(backup_local.read_bytes()).hexdigest() != artifact["sha256"]:
+                raise ValueError("Existing local backup differs; it was not overwritten.")
+        else:
+            with backup_local.open("xb") as output:
+                output.write(data)
+            backup_local.chmod(0o600)
+        print(f"Verified recovery archive: {backup_local.relative_to(ROOT)}")
+        print(f"On-TV recovery directory: {backup_directory(args.name)}")
+    elif args.action == "pull":
         save_private(args.local, decode_pull(response["stdout"]))
         print("Verified file saved inside .local/.")
-    else:
+    elif args.action == "inventory":
+        print(f"Private inventory saved in {log.relative_to(ROOT)}. Review locally; do not publish raw output.")
+    elif args.action not in ("sources", "containers", "backup-adplayer", "launch-context", "adplayer-trial"):
         print(response["stdout"], end="")
     print("UID/EUID 0 verified; root staging cleaned; passwd and SDB key hashes unchanged.")
 

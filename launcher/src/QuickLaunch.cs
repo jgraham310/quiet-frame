@@ -12,7 +12,7 @@ public sealed class QuickLaunch : NUIApplication {
  [DllImport("libcapi-appfw-app-control.so.0")] static extern int app_control_add_extra_data(IntPtr c,string key,string val);
  [DllImport("libcapi-appfw-app-control.so.0")] static extern int app_control_send_launch_request(IntPtr c,IntPtr cb,IntPtr data);
  [DllImport("libcapi-appfw-app-control.so.0")] static extern int app_control_destroy(IntPtr c);
- protected override void OnCreate(){base.OnCreate();Window.Default.Hide();}
+ protected override void OnCreate(){base.OnCreate();Window.Hide();}
  protected override void OnAppControlReceived(AppControlReceivedEventArgs e){
   base.OnAppControlReceived(e);string kind;bool preload=e.ReceivedAppControl.ExtraData.TryGet("launch_type",out kind)&&kind=="preload";
   int result=0;

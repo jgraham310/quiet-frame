@@ -1,5 +1,11 @@
 # Recovery and rollback
 
+For The Frame also record and verify Art Mode, the Power button setting,
+motion/light behavior, Art Store and SmartThings before and after each phase.
+Preserve original Samsung Home access. The recipes below are the original
+U8000F recovery path; validate their containers and selectors before adapting
+them to a Frame. See [Frame compatibility](10-frame.md).
+
 Keep the computer's Developer Mode authorization working until the modified
 TV has passed full boot, standby/wake, HDMI, sound and remote tests.
 Retain the first backups privately. Do not factory-reset first: that can

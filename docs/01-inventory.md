@@ -1,5 +1,10 @@
 # Identify the TV before changing it
 
+**Frame fork:** begin with [The Frame guide](10-frame.md). The observations
+and root commands below belong to the original U8000F case study. Frame
+identification/preflight works without borrowing that device's firmware;
+root inventory requires an exact private profile.
+
 The supported case study is the **75-inch Samsung U8000F,
 UN75U8000FFXZA**, firmware **T-KSU2EFAKUC-0090-1300.9**. The model code came
 from the television's About screen, not an Amazon listing or an inferred
